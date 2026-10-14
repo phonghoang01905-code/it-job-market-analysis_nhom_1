@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local config and secrets
+.env
+config/sites.json
+
+# Data outputs
+data/raw/*.csv
+data/raw/*.json
+data/processed/*.csv
+data/processed/*.json
+outputs/*
+!outputs/.gitkeep
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

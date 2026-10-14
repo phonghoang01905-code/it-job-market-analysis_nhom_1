@@ -1,0 +1,64 @@
+{
+  "request": {
+    "user_agent": "DataAnaStudentProject/1.0 (+https://github.com/your-username/it-job-market-analysis)",
+    "delay_seconds": 2.5,
+    "timeout_seconds": 20
+  },
+  "sites": [
+    {
+      "name": "itviec",
+      "base_url": "https://itviec.com",
+      "robots_url": "https://itviec.com/robots.txt",
+      "enabled": false,
+      "list_urls": [
+        "https://itviec.com/it-jobs?page=1"
+      ],
+      "selectors": {
+        "card": ".job-card",
+        "title": "h3, .job-title",
+        "company": ".company-name",
+        "location": ".address, .location",
+        "salary": ".salary",
+        "skills": ".tag-list a, .tags a",
+        "url": "a"
+      }
+    },
+    {
+      "name": "topcv",
+      "base_url": "https://www.topcv.vn",
+      "robots_url": "https://www.topcv.vn/robots.txt",
+      "enabled": false,
+      "list_urls": [
+        "https://www.topcv.vn/tim-viec-lam-it-c10026"
+      ],
+      "selectors": {
+        "card": ".job-item, .job-ta",
+        "title": "h3, .title",
+        "company": ".company, .company-name",
+        "location": ".address, .location",
+        "salary": ".salary",
+        "skills": ".tag, .skill",
+        "url": "a"
+      }
+    },
+    {
+      "name": "topdev",
+      "base_url": "https://topdev.vn",
+      "robots_url": "https://topdev.vn/robots.txt",
+      "enabled": false,
+      "list_urls": [
+        "https://topdev.vn/viec-lam-it"
+      ],
+      "selectors": {
+        "card": ".job-item, .job-card",
+        "title": "h3, .job-title",
+        "company": ".company-name",
+        "location": ".location",
+        "salary": ".salary",
+        "skills": ".tag, .skill",
+        "url": "a"
+      }
+    }
+  ]
+}
+
