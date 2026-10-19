@@ -2,7 +2,8 @@
   "request": {
     "user_agent": "DataAnaStudentProject/1.0 (+https://github.com/your-username/it-job-market-analysis)",
     "delay_seconds": 2.5,
-    "timeout_seconds": 20
+    "timeout_seconds": 20,
+    "retries": 3
   },
   "sites": [
     {
@@ -27,18 +28,26 @@
       "name": "topcv",
       "base_url": "https://www.topcv.vn",
       "robots_url": "https://www.topcv.vn/robots.txt",
-      "enabled": false,
+      "enabled": true,
+      "max_pages": 1,
+      "page_param": "page",
+      "fetch_descriptions": true,
       "list_urls": [
-        "https://www.topcv.vn/tim-viec-lam-it-c10026"
+        "https://www.topcv.vn/tim-viec-lam-it"
       ],
       "selectors": {
-        "card": ".job-item, .job-ta",
-        "title": "h3, .title",
-        "company": ".company, .company-name",
-        "location": ".address, .location",
+        "card": ".job-ta",
+        "title": "h3.title a span, h3.title",
+        "company": ".company-name",
+        "location": ".address.truncate",
         "salary": ".salary",
-        "skills": ".tag, .skill",
-        "url": "a"
+        "skills": ".box-icon .item-tag",
+        "url": "h3.title a",
+        "description": ".job-description",
+        "posted_date": ".label-update"
+      },
+      "detail_selectors": {
+        "description": ".box-job-information-detail-item"
       }
     },
     {

@@ -77,6 +77,16 @@ python -m data_ana.crawl --config config\sites.json --out data\raw\jobs.csv
 python -m data_ana.analyze --input data\raw\jobs.csv --out-dir outputs
 ```
 
+### Crawl TopCV (tuan 2)
+
+Cau hinh mau da bat TopCV va gioi han mac dinh mot trang. Crawler kiem tra `robots.txt`, dung User-Agent khai bao, cho 2,5 giay giua cac request, retry loi tam thoi va lay mo ta tu trang chi tiet cua tung tin.
+
+```bash
+python -c "import sys; sys.path.insert(0, 'src'); from data_ana.crawl import main; main()" -- --config config/sites.example.json --max-pages 1 --out data/raw/jobs.csv
+```
+
+Lenh tren tao them file JSON theo ngay trong `data/raw` (vi du `2026-10-19_topcv.json`). Du lieu gom tieu de, cong ty, luong, dia diem, mo ta, ngay dang, link va cac truong chuan hoa hien co. Co the dung `--raw-out` de chi dinh ten file JSON.
+
 4. Chay dashboard:
 
 ```bash

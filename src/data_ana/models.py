@@ -15,6 +15,9 @@ class JobPost:
     salary_text: str = ""
     salary_min: int | None = None
     salary_max: int | None = None
+    description: str = ""
+    posted_date: str = ""
+    job_id: str = ""
     skills: list[str] = field(default_factory=list)
     url: str = ""
     scraped_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
