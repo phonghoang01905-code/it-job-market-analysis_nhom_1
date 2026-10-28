@@ -1,27 +1,34 @@
 {
   "request": {
-    "user_agent": "DataAnaStudentProject/1.0 (+https://github.com/your-username/it-job-market-analysis)",
-    "delay_seconds": 2.5,
+    "user_agent": "DataAnaStudentProject/1.1 (+https://github.com/phonghoang01905-code/it-job-market-analysis_nhom_1)",
+    "delay_seconds": 4,
     "timeout_seconds": 20,
-    "retries": 3
+    "retries": 2
   },
   "sites": [
     {
       "name": "itviec",
       "base_url": "https://itviec.com",
       "robots_url": "https://itviec.com/robots.txt",
-      "enabled": false,
+      "enabled": true,
       "list_urls": [
-        "https://itviec.com/it-jobs?page=1"
+        "https://itviec.com/it-jobs"
       ],
       "selectors": {
         "card": ".job-card",
-        "title": "h3, .job-title",
-        "company": ".company-name",
-        "location": ".address, .location",
+        "title": "h3 a",
+        "company": ".small-text a[href^=\"/companies/\"]",
+        "location": "div[title].text-truncate",
         "salary": ".salary",
-        "skills": ".tag-list a, .tags a",
-        "url": "a"
+        "skills": "a[data-responsive-tag-list-target=\"tag\"]",
+        "url": "h3 a",
+        "posted_date": ".ipy-2 > div > span.small-text",
+        "work_model": "div.text-rich-grey.flex-shrink-0"
+      },
+      "max_pages": 1,
+      "fetch_descriptions": true,
+      "detail_selectors": {
+        "description": ".paragraph"
       }
     },
     {
@@ -41,7 +48,7 @@
         "company": ".company-name",
         "location": ".address.truncate",
         "salary": ".salary",
-        "skills": ".box-icon .item-tag",
+        "skills": ".tag a.item-tag",
         "url": "h3.title a",
         "description": ".job-description",
         "posted_date": ".label-update"
@@ -54,20 +61,15 @@
       "name": "topdev",
       "base_url": "https://topdev.vn",
       "robots_url": "https://topdev.vn/robots.txt",
-      "enabled": false,
+      "enabled": true,
       "list_urls": [
-        "https://topdev.vn/viec-lam-it"
+        "https://topdev.vn/jobs/search"
       ],
-      "selectors": {
-        "card": ".job-item, .job-card",
-        "title": "h3, .job-title",
-        "company": ".company-name",
-        "location": ".location",
-        "salary": ".salary",
-        "skills": ".tag, .skill",
-        "url": "a"
-      }
+      "max_pages": 1,
+      "fetch_descriptions": true,
+      "adapter": "topdev",
+      "it_category_id": 1,
+      "detail_selectors": {}
     }
   ]
 }
-

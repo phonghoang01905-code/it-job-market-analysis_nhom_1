@@ -1,0 +1,57 @@
+name: Daily crawl and ETL
+
+on:
+  schedule:
+    # 00:15 UTC = 07:15 Vietnam, once every day.
+    - cron: '15 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: '1'
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      USD_VND_RATE: ${{ vars.USD_VND_RATE || '25000' }}
+      ALERT_CHANNEL: ${{ vars.ALERT_CHANNEL || 'none' }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+      SMTP_SECURITY: ${{ vars.SMTP_SECURITY || 'starttls' }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      ALERT_FROM: ${{ secrets.ALERT_FROM }}
+      ALERT_TO: ${{ secrets.ALERT_TO }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install project
+        run: python -m pip install -e .
+      - name: Crawl, clean, load new jobs, and notify on failure
+        run: python crawler.py --max-pages 1
+      - name: Save snapshots and logs even on a partial run
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: job-data-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            data/raw/*.csv
+            data/raw/*.json
+            data/processed/*.csv
+            data/processed/*.json
+            logs/pipeline.log*
+            logs/latest_run.json

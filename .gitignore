@@ -15,7 +15,13 @@ env/
 
 # Local config and secrets
 .env
+.env.*
+!.env.example
 config/sites.json
+logs/
+data/postgres/
+*.egg-info/
+.pg-init-*
 
 # Data outputs
 data/raw/*.csv
