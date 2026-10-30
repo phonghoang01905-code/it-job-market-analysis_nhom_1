@@ -118,3 +118,48 @@ def test_429_on_one_source_does_not_prevent_next_source(monkeypatch):
 
 def test_pagination_retains_filters():
     assert make_page_url("https://topdev.vn/jobs/search?keyword=Python", 2) == "https://topdev.vn/jobs/search?keyword=Python&page=2"
+
+
+def test_crawl_target_counts_unique_jobs_across_pages(monkeypatch):
+    from data_ana import crawl as module
+    pages = {
+        "https://jobs.example/list": '<article data-job-id="1"><h3>One</h3><a href="/1"></a></article><article data-job-id="1"><h3>One</h3><a href="/1"></a></article><article data-job-id="2"><h3>Two</h3><a href="/2"></a></article>',
+        "https://jobs.example/list?page=2": '<article data-job-id="2"><h3>Two</h3><a href="/changed-slug"></a></article><article data-job-id="3"><h3>Three</h3><a href="/3"></a></article><article data-job-id="4"><h3>Four</h3><a href="/4"></a></article>',
+    }
+    calls = []
+    class Session:
+        headers = {}
+        def get(self, url, timeout):
+            calls.append(url)
+            response = requests.Response()
+            response.status_code = 200
+            response._content = pages[url].encode()
+            return response
+        def close(self):
+            pass
+    class Robots:
+        def can_fetch(self, *args):
+            return True
+    monkeypatch.setattr(module, "make_session", lambda retries: Session())
+    monkeypatch.setattr(module, "load_robots_parser", lambda *args: Robots())
+    selectors = {"card": "article", "title": "h3", "url": "a", "company": "", "location": "", "salary": "", "skills": ""}
+    config = {"request": {"delay_seconds": 0}, "sites": [{"name": "test", "enabled": True, "base_url": "https://jobs.example", "robots_url": "unused", "list_urls": ["https://jobs.example/list"], "max_pages": 4, "max_jobs": 3, "selectors": selectors}]}
+    statuses = {}
+    posts = module.crawl(config, statuses=statuses)
+    assert [p.job_id for p in posts] == ["1", "2", "3"]
+    assert len(calls) == 2
+    assert statuses["test"]["status"] == "ok"
+
+
+def test_topdev_requirements_resolve_public_utf8_text_reference():
+    from data_ana.sources import enrich_detail
+    requirement = "<p>Yêu cầu: Python3 và C++17, ưu tiên JavaScript.</p>"
+    job = {"id": 123, "title": "Developer", "job_category_id": 1, "requirements_original": "$2f"}
+    props = '15:' + json.dumps({"job": job}) + '\n'
+    record = f"2f:T{len(requirement.encode('utf-8')):x}," + requirement
+    html = ''.join('<script>self.__next_f.push(' + json.dumps([1, s]) + ')</script>' for s in [props, record[:19], record[19:]])
+    post = JobPost(source="topdev", title="Developer", job_id="123")
+    enrich_detail(post, html, {})
+    assert post.requirements == "Yêu cầu: Python3 và C++17, ưu tiên JavaScript."
+    assert post.programming_languages == ["C++", "JavaScript", "Python"]
+    assert post.language_evidence["Python"]["source"] == "Yêu cầu ứng viên"

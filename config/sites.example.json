@@ -25,11 +25,12 @@
         "posted_date": ".ipy-2 > div > span.small-text",
         "work_model": "div.text-rich-grey.flex-shrink-0"
       },
-      "max_pages": 1,
+      "max_pages": 3,
       "fetch_descriptions": true,
       "detail_selectors": {
         "description": ".paragraph"
-      }
+      },
+      "max_jobs": 50
     },
     {
       "name": "topcv",
@@ -55,7 +56,9 @@
       },
       "detail_selectors": {
         "description": ".box-job-information-detail-item"
-      }
+      },
+      "max_jobs": 50,
+      "delay_seconds": 12
     },
     {
       "name": "topdev",
@@ -63,13 +66,14 @@
       "robots_url": "https://topdev.vn/robots.txt",
       "enabled": true,
       "list_urls": [
-        "https://topdev.vn/jobs/search"
+        "https://topdev.vn/jobs/search?job_categories_ids=2,3,4,5,6,7,8,9,10,11,12,13,67"
       ],
-      "max_pages": 1,
+      "max_pages": 4,
       "fetch_descriptions": true,
       "adapter": "topdev",
       "it_category_id": 1,
-      "detail_selectors": {}
+      "detail_selectors": {},
+      "max_jobs": 50
     }
   ]
 }

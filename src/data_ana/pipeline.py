@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 def add_arguments(parser):
     parser.add_argument("--config", type=Path, default=Path("config/sites.example.json"))
     parser.add_argument("--sources", nargs="+")
-    parser.add_argument("--max-pages", type=int, default=1)
+    parser.add_argument("--max-pages", type=int, help="Override per-site page limits")
+    parser.add_argument("--max-jobs", type=int, help="Override per-site unique job limits")
     parser.add_argument("--raw", type=Path, default=Path("data/raw/jobs.csv"))
     parser.add_argument("--out-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--log-dir", type=Path, default=Path("logs"))
@@ -38,7 +39,7 @@ def run_pipeline(args) -> int:
             raise ValueError("Thiếu DATABASE_URL. Cấu hình .env/GitHub Secrets hoặc dùng --skip-db.")
         if not args.skip_crawl:
             config = load_config(args.config)
-            if args.max_pages < 1:
+            if args.max_pages is not None and args.max_pages < 1:
                 raise ValueError("--max-pages phải >= 1")
             known = {s["name"] for s in config["sites"]}
             if args.sources and set(args.sources) - known:
@@ -46,6 +47,8 @@ def run_pipeline(args) -> int:
             sites = [s for s in config["sites"] if s["name"] in args.sources] if args.sources else [s for s in config["sites"] if s.get("enabled")]
             if not sites:
                 raise ValueError("Không có nguồn được bật")
+            if getattr(args, "max_jobs", None) is not None:
+                sites = [dict(s, max_jobs=args.max_jobs) for s in sites]
             posts = []
             statuses = report["sources"]
             for site in sites:

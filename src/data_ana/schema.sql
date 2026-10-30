@@ -46,6 +46,19 @@ CREATE TABLE IF NOT EXISTS job_skills (
     PRIMARY KEY(job_id, skill_id)
 );
 
+-- Additive migration for databases created before programming-language fields.
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS requirements TEXT NOT NULL DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS programming_languages TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS language_evidence JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS supplementary_skills TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS foreign_languages TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS english_requirement TEXT NOT NULL DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS english_status TEXT NOT NULL DEFAULT 'unknown'
+    CHECK (english_status IN ('unknown', 'required', 'preferred', 'mentioned', 'not_required'));
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS benefits TEXT NOT NULL DEFAULT '';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS benefit_tags TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS profile_evidence JSONB NOT NULL DEFAULT '{}';
+
 CREATE INDEX IF NOT EXISTS jobs_company_idx ON jobs(company_id);
 CREATE INDEX IF NOT EXISTS jobs_scraped_at_idx ON jobs(scraped_at);
 CREATE INDEX IF NOT EXISTS job_skills_skill_idx ON job_skills(skill_id);

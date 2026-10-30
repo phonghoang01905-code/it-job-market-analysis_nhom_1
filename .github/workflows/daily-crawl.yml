@@ -40,7 +40,7 @@ jobs:
       - name: Install project
         run: python -m pip install -e .
       - name: Crawl, clean, load new jobs, and notify on failure
-        run: python crawler.py --max-pages 1
+        run: python crawler.py
       - name: Save snapshots and logs even on a partial run
         if: always()
         uses: actions/upload-artifact@v7

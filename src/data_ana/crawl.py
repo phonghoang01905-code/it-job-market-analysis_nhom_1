@@ -17,6 +17,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from data_ana.models import JobPost
+from data_ana.languages import refresh_languages
+from data_ana.job_profile import refresh_profile
 from data_ana.sources import canonical_url, enrich_detail, parse_topdev
 from data_ana.utils import (
     absolute_url,
@@ -39,6 +41,16 @@ FIELDNAMES = [
     "salary_min",
     "salary_max",
     "description",
+    "requirements",
+    "programming_languages",
+    "language_evidence",
+    "supplementary_skills",
+    "foreign_languages",
+    "english_requirement",
+    "english_status",
+    "benefits",
+    "benefit_tags",
+    "profile_evidence",
     "posted_date",
     "job_id",
     "skills",
@@ -47,7 +59,7 @@ FIELDNAMES = [
 ]
 
 LOCAL_TZ = timezone(timedelta(hours=7))
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("data_ana.crawl")
 
 
 def today() -> str:
@@ -95,7 +107,7 @@ def parse_cards(html: str, site: dict) -> list[JobPost]:
         posted_date = text_from(card, selectors.get("posted_date", ""))
         model = text_from(card, selectors.get("work_model", ""))
         context = " ".join(
-            [title, company, location, salary_text, description, " ".join(skill_labels)]
+            [title, description, " ".join(skill_labels)]
         )
         salary_min, salary_max = parse_salary_vnd(salary_text)
 
@@ -118,6 +130,9 @@ def parse_cards(html: str, site: dict) -> list[JobPost]:
             )
         )
 
+    for post in posts:
+        refresh_languages(post)
+        refresh_profile(post)
     return posts
 
 
@@ -182,8 +197,13 @@ def fetch_description(
 
     response = session.get(post.url, timeout=timeout)
     response.raise_for_status()
-    enrich_detail(post, response.text, detail_selectors)
-    return bool(post.description)
+    recognized = enrich_detail(post, response.text, detail_selectors)
+    if recognized:
+        import hashlib
+        cache = Path("outputs/detail_cache") / site["name"]
+        cache.mkdir(parents=True, exist_ok=True)
+        (cache / (hashlib.sha256(post.url.encode()).hexdigest() + ".html")).write_text(response.text, encoding="utf-8")
+    return recognized and bool(post.description)
 
 
 def crawl(
@@ -192,7 +212,7 @@ def crawl(
 ) -> list[JobPost]:
     request_config = config.get("request", {})
     user_agent = request_config.get("user_agent", "DataAnaStudentProject/1.0")
-    delay = float(request_config.get("delay_seconds", 2.5))
+    default_delay = float(request_config.get("delay_seconds", 2.5))
     timeout = int(request_config.get("timeout_seconds", 20))
     retries = int(request_config.get("retries", 3))
     session = make_session(retries)
@@ -203,9 +223,11 @@ def crawl(
     for site in config.get("sites", []):
         if not site.get("enabled", False):
             continue
+        delay = float(site.get("delay_seconds", default_delay))
         stop_crawling = False
         site_posts: list[JobPost] = []
         seen_jobs: set[str] = set()
+        seen_ids: set[str] = set()
         status = {
             "attempted_at": datetime.now(timezone.utc).isoformat(),
             "status": "running", "message": "", "pages": 0,
@@ -216,6 +238,12 @@ def crawl(
         page_limit = int(max_pages if max_pages is not None else site.get("max_pages", 1))
         if page_limit < 1:
             raise ValueError("max_pages must be at least 1")
+        job_limit = site.get("max_jobs")
+        if job_limit is not None:
+            job_limit = int(job_limit)
+            if job_limit < 1:
+                raise ValueError("max_jobs must be at least 1")
+        status["target_jobs"] = job_limit
         robots_parser = load_robots_parser(session, site["robots_url"], timeout)
         if robots_parser is None:
             status.update(status="blocked", message="Không đọc được robots.txt; chưa gửi request lấy tin.")
@@ -245,12 +273,19 @@ def crawl(
                     stop_crawling = True
                     break
                 page_posts = parse_cards(response.text, site)
-                page_posts = [p for p in page_posts if p.url and p.url not in seen_jobs]
+                unique_page = {}
+                for post in page_posts:
+                    if post.url and post.url not in seen_jobs and (not post.job_id or post.job_id not in seen_ids):
+                        unique_page[post.job_id or post.url] = post
+                page_posts = list(unique_page.values())
+                if job_limit is not None:
+                    page_posts = page_posts[:max(0, job_limit - len(site_posts))]
                 if not page_posts:
                     if not site_posts:
                         status.update(status="empty", message="Không tìm thấy tin IT; kiểm tra cấu trúc trang hoặc bộ lọc.")
                     break
                 seen_jobs.update(p.url for p in page_posts)
+                seen_ids.update(p.job_id for p in page_posts if p.job_id)
                 posts.extend(page_posts)
                 site_posts.extend(page_posts)
                 status["pages"] += 1
@@ -280,12 +315,20 @@ def crawl(
                         time.sleep(delay)
                     if stop_crawling:
                         break
+                if job_limit is not None and len(site_posts) >= job_limit:
+                    break
             if stop_crawling:
+                break
+            if job_limit is not None and len(site_posts) >= job_limit:
                 break
         status["collected"] = len(site_posts)
         status["with_description"] = sum(bool(p.description) for p in site_posts)
+        status["with_requirements"] = sum(bool(p.requirements) for p in site_posts)
+        status["with_programming_languages"] = sum(bool(p.programming_languages) for p in site_posts)
         if status["status"] == "running":
             status["status"] = "ok" if site_posts else "empty"
+            if job_limit and 0 < len(site_posts) < job_limit:
+                status.update(status="partial", message=f"Thu được {len(site_posts)}/{job_limit} tin trong giới hạn trang; không thêm tin trùng để đủ số.")
 
     session.close()
     return posts
@@ -310,6 +353,11 @@ def merge_posts(posts: list[JobPost], path: Path) -> list[JobPost]:
             for row in csv.DictReader(file):
                 row = {key: value for key, value in row.items() if key in FIELDNAMES}
                 row["skills"] = [s for s in row.get("skills", "").split(";") if s]
+                row["programming_languages"] = [s for s in row.get("programming_languages", "").split(";") if s]
+                row["language_evidence"] = json.loads(row.get("language_evidence") or "{}")
+                for key in ("supplementary_skills", "foreign_languages", "benefit_tags"):
+                    row[key] = [s for s in row.get(key, "").split(";") if s]
+                row["profile_evidence"] = json.loads(row.get("profile_evidence") or "{}")
                 for key in ("salary_min", "salary_max"):
                     row[key] = int(float(row[key])) if row.get(key) else None
                 row["url"] = canonical_url(row.get("url", ""))
@@ -320,10 +368,13 @@ def merge_posts(posts: list[JobPost], path: Path) -> list[JobPost]:
         key = (post.source, post.url or post.job_id)
         previous = merged.get(key)
         if previous:
-            for field in ("description", "posted_date", "company", "location", "job_id"):
+            for field in ("description", "requirements", "benefits", "posted_date", "company", "location", "job_id"):
                 if not getattr(post, field):
                     setattr(post, field, getattr(previous, field))
         merged[key] = post
+    for post in merged.values():
+        refresh_languages(post)
+        refresh_profile(post)
     return list(merged.values())
 
 
@@ -347,10 +398,14 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=Path("data/raw/jobs.csv"))
     parser.add_argument("--raw-out", type=Path)
     parser.add_argument("--max-pages", type=int)
+    parser.add_argument("--max-jobs", type=int, help="Maximum unique jobs per source")
     parser.add_argument("--sources", nargs="+", help="Only crawl these sources, e.g. itviec topdev")
     args = parser.parse_args()
 
     config = load_config(args.config)
+    if args.max_jobs is not None:
+        for site in config["sites"]:
+            site["max_jobs"] = args.max_jobs
     if args.sources:
         names = {s["name"] for s in config["sites"]}
         if set(args.sources) - names:

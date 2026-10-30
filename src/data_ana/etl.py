@@ -13,7 +13,9 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from data_ana.sources import canonical_url
+from data_ana.sources import canonical_url, benefits_text
+from data_ana.job_profile import extract_profile
+from data_ana.languages import extract_languages
 from data_ana.utils import clean_text, infer_level, infer_work_model, unaccent
 
 
@@ -127,7 +129,7 @@ def parse_posted_date(text: str) -> date | None:
 
 
 def normalize_job(raw: dict, rate: Decimal) -> dict:
-    text_fields = ["source", "job_id", "title", "company", "location", "description", "salary_text", "posted_date", "url", "scraped_at"]
+    text_fields = ["source", "job_id", "title", "company", "location", "description", "requirements", "salary_text", "posted_date", "url", "scraped_at"]
     job = {key: clean_text(str(raw.get(key) or "")) for key in text_fields}
     job["source"] = job["source"].casefold()
     job["url"] = canonical_url(job["url"])
@@ -148,7 +150,9 @@ def normalize_job(raw: dict, rate: Decimal) -> dict:
         job["work_model"] = "Unknown"
     job["posted_date_text"] = job["posted_date"]
     job["posted_date"] = parse_posted_date(job["posted_date"])
-    job["skills"] = extract_normalized_skills(job["title"], job["description"], raw.get("skills", []))
+    job["skills"] = extract_normalized_skills(job["title"], job["description"] + " " + job["requirements"], raw.get("skills", []))
+    job["programming_languages"], job["language_evidence"] = extract_languages(job["title"], job["description"], raw.get("skills", []), job["requirements"])
+    job.update(extract_profile(job["title"], job["description"], job["requirements"], raw.get("skills", []), benefits_text(raw.get("benefits", ""))))
     job.update(normalize_salary(job["salary_text"], rate))
     return job
 
@@ -218,7 +222,11 @@ def run_etl(input_path: Path, output_dir: Path, *, usd_vnd_rate=Decimal("25000")
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()
         for job in jobs:
-            writer.writerow({**job, "skills": ";".join(job["skills"])})
+            row = {**job, "skills": ";".join(job["skills"]), "programming_languages": ";".join(job["programming_languages"]), "language_evidence": json.dumps(job["language_evidence"], ensure_ascii=False)}
+            for key in ("supplementary_skills", "foreign_languages", "benefit_tags"):
+                row[key] = ";".join(job[key])
+            row["profile_evidence"] = json.dumps(job["profile_evidence"], ensure_ascii=False)
+            writer.writerow(row)
     temp.replace(output_dir / "jobs.csv")
     report = {"input_rows": len(rows), "clean_rows": len(jobs), "duplicates": duplicates,
               "rejected": len(rejected), "usd_vnd_rate": str(rate), "database": "skipped"}

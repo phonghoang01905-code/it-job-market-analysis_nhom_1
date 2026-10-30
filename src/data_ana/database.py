@@ -3,6 +3,8 @@ from __future__ import annotations
 from importlib.resources import files
 
 import psycopg
+from psycopg.types.json import Jsonb
+from data_ana.job_profile import extract_profile
 
 
 def connect(database_url: str):
@@ -15,6 +17,22 @@ def initialize(connection) -> None:
     connection.execute(files("data_ana").joinpath("schema.sql").read_text(encoding="utf-8"))
 
 
+def update_profile(connection, job_id: int, job: dict, old_benefits="", old_requirements="") -> None:
+    fields = ("supplementary_skills", "foreign_languages", "english_requirement", "english_status", "benefits", "benefit_tags", "profile_evidence")
+    fallback = (old_benefits and not job.get("benefits")) or (old_requirements and not job.get("requirements"))
+    if all(key in job for key in fields) and not fallback:
+        # ETL extracted these from the original site tags, including English.
+        # Normalized technical skills alone cannot reconstruct spoken languages.
+        profile = {key: job[key] for key in fields}
+    else:
+        profile = extract_profile(job["title"], job.get("description", ""), job.get("requirements") or old_requirements,
+            job.get("skills", []), job.get("benefits") or old_benefits)
+    connection.execute("""UPDATE jobs SET supplementary_skills=%s, foreign_languages=%s,
+        english_requirement=%s, english_status=%s, benefits=%s, benefit_tags=%s, profile_evidence=%s
+        WHERE id=%s""", (profile["supplementary_skills"], profile["foreign_languages"], profile["english_requirement"],
+        profile["english_status"], profile["benefits"], profile["benefit_tags"], Jsonb(profile["profile_evidence"]), job_id))
+
+
 def load_incremental(jobs: list[dict], database_url: str) -> dict:
     counts = {"inserted": 0, "skipped": 0}
     # One transaction for schema + all four tables. Any failure rolls back.
@@ -23,10 +41,19 @@ def load_incremental(jobs: list[dict], database_url: str) -> dict:
         initialize(connection)
         for job in jobs:
             existing = connection.execute(
-                "SELECT id FROM jobs WHERE source = %s AND (source_job_id = %s OR url = %s) LIMIT 1",
+                "SELECT id, benefits, requirements FROM jobs WHERE source = %s AND (source_job_id = %s OR url = %s) LIMIT 1",
                 (job["source"], job["job_id"] or None, job["url"] or None),
             ).fetchone()
             if existing:
+                # Enrich the new fields on historical jobs without overwriting
+                # their existing salary, description, or original scrape time.
+                connection.execute(
+                    """UPDATE jobs SET programming_languages=%s, language_evidence=%s,
+                       requirements=CASE WHEN %s <> '' THEN %s ELSE requirements END
+                       WHERE id=%s""",
+                    (job.get("programming_languages", []), Jsonb(job.get("language_evidence", {})), job.get("requirements", ""), job.get("requirements", ""), existing[0]),
+                )
+                update_profile(connection, existing[0], job, existing[1], existing[2])
                 counts["skipped"] += 1
                 continue
             company_id = None
@@ -53,6 +80,9 @@ def load_incremental(jobs: list[dict], database_url: str) -> dict:
             if not row:
                 counts["skipped"] += 1
                 continue
+            connection.execute("UPDATE jobs SET requirements=%s, programming_languages=%s, language_evidence=%s WHERE id=%s",
+                (job.get("requirements", ""), job.get("programming_languages", []), Jsonb(job.get("language_evidence", {})), row[0]))
+            update_profile(connection, row[0], job)
             for skill in job["skills"]:
                 connection.execute("INSERT INTO skills (name) VALUES (%s) ON CONFLICT (name) DO NOTHING", (skill,))
                 skill_id = connection.execute("SELECT id FROM skills WHERE name = %s", (skill,)).fetchone()[0]

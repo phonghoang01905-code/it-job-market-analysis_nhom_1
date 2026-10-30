@@ -56,3 +56,37 @@ def test_real_database_rolls_back_all_four_tables(isolated_database):
     with isolated_database(None) as connection:
         for name in ("jobs", "companies", "skills", "job_skills"):
             assert connection.execute(sql.SQL("SELECT count(*) FROM {}").format(sql.Identifier(name))).fetchone()[0] == 0
+
+
+def test_language_enrichment_backfills_existing_jobs_without_duplicate(isolated_database):
+    first = sample()
+    first["programming_languages"] = []
+    first["language_evidence"] = {}
+    database.load_incremental([first], "test")
+    refreshed = sample()
+    refreshed["requirements"] = "Python and JavaScript"
+    from data_ana.languages import extract_languages
+    refreshed["programming_languages"], refreshed["language_evidence"] = extract_languages(requirements=refreshed["requirements"])
+    assert database.load_incremental([refreshed], "test") == {"inserted": 0, "skipped": 1}
+    with isolated_database(None) as connection:
+        row = connection.execute("SELECT programming_languages, requirements, description FROM jobs").fetchone()
+        assert row == (["JavaScript", "Python"], "Python and JavaScript", "Python Docker")
+
+
+def test_profile_backfill_and_missing_legacy_benefits_do_not_erase_data(isolated_database):
+    job = sample(requirements="English IELTS 6.5 required. Teamwork.", benefits="13th month bonus. Health insurance.")
+    database.load_incremental([job], "test")
+    legacy = sample()
+    assert database.load_incremental([legacy], "test") == {"inserted": 0, "skipped": 1}
+    with isolated_database(None) as c:
+        row = c.execute("SELECT benefits, english_status, foreign_languages, supplementary_skills FROM jobs").fetchone()
+        assert row == ("13th month bonus. Health insurance.", "required", ["Tiếng Anh"], ["Làm việc nhóm"])
+
+
+def test_original_spoken_language_tag_survives_database_load(isolated_database):
+    job = sample(skills=["Python", "English"])
+    assert job["foreign_languages"] == ["Tiếng Anh"]
+    assert "English" not in job["skills"]
+    database.load_incremental([job], "test")
+    with isolated_database(None) as c:
+        assert c.execute("SELECT foreign_languages,english_status FROM jobs").fetchone() == (["Tiếng Anh"], "mentioned")
