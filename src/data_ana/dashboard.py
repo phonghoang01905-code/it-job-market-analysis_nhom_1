@@ -4,7 +4,9 @@ import argparse
 import json
 import re
 import unicodedata
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import altair as alt
 import pandas as pd
@@ -12,6 +14,8 @@ import streamlit as st
 from data_ana.languages import ALIASES, extract_languages
 from data_ana.job_profile import ENGLISH_STATUS_LABELS, extract_profile
 from data_ana.cv_dashboard import show_cv_matcher
+from data_ana.analytics_dashboard import PAGES, show_analysis_page
+from data_ana.data_access import read_database
 
 
 SOURCES = {
@@ -36,6 +40,8 @@ SKILL_NAMES.update({"c": "C", "go": "Go"})
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("data/raw/jobs.csv"))
+    parser.add_argument("--source", choices=["csv", "postgres"], default="csv")
+    parser.add_argument("--refresh-seconds", type=int, choices=[0, 15, 30, 60, 120], default=60)
     return parser.parse_args()
 
 
@@ -76,7 +82,18 @@ def profile_for_row(row: dict) -> dict:
 
 
 def load_jobs(path: Path) -> pd.DataFrame:
-    df = pd.read_csv(path, keep_default_na=False)
+    return prepare_dashboard_jobs(pd.read_csv(path, keep_default_na=False))
+
+
+def prepare_dashboard_jobs(frame: pd.DataFrame) -> pd.DataFrame:
+    df = frame.copy()
+    normalized = frame.attrs.get("skills_normalized", False) or {"salary_currency", "usd_vnd_rate"}.issubset(frame.columns)
+    if normalized:
+        # Keep stored BI dimensions before building richer display labels and
+        # language evidence. EDA must agree with the SQL views, including city.
+        df["_analysis_city"] = df.get("city", pd.Series("", index=df.index))
+        df["_analysis_skills"] = [sorted({s.strip() for s in str(skills or "").split(";") + str(languages or "").split(";") if s.strip()})
+                                  for skills, languages in zip(df["skills"], df["programming_languages"])]
     for column in ["source", "title", "company", "location", "level", "work_model", "salary_text", "skills", "description", "requirements", "benefits", "posted_date", "url", "scraped_at"]:
         if column not in df:
             df[column] = ""
@@ -102,7 +119,8 @@ def load_jobs(path: Path) -> pd.DataFrame:
     for field in ("english_requirement", "english_status", "benefits"):
         df[field] = pd.Series([p[field] for p in profiles], index=df.index, dtype=object)
     df["_profile_evidence"] = pd.Series([p["profile_evidence"] for p in profiles], index=df.index, dtype=object)
-    df["salary_midpoint"] = df[["salary_min", "salary_max"]].mean(axis=1, skipna=True)
+    both = df.salary_min.notna() & df.salary_max.notna() & df.salary_min.le(df.salary_max)
+    df["salary_midpoint"] = ((df.salary_min + df.salary_max)/2).where(both)
     df["city"] = df["location"].apply(city_label)
     df["work_model"] = df["work_model"].where(df["work_model"].isin(MODEL_NAMES), "Unknown")
     df["website"] = df["source"].map(lambda s: SOURCES.get(s, {}).get("name", s))
@@ -153,7 +171,7 @@ def show_metrics(df: pd.DataFrame) -> None:
     total, companies, disclosed, descriptions = st.columns(4)
     total.metric("Tin tuyển dụng", f"{len(df):,}")
     companies.metric("Nhà tuyển dụng", f"{df.loc[df['company'].ne(''), 'company'].nunique():,}")
-    disclosed.metric("Có thông tin lương", f"{df['salary_midpoint'].notna().sum():,} / {len(df):,}")
+    disclosed.metric("Đủ khoảng lương", f"{df['salary_midpoint'].notna().sum():,} / {len(df):,}")
     descriptions.metric("Có mô tả chi tiết", f"{df['description'].str.strip().ne('').sum():,} / {len(df):,}")
 
 
@@ -307,10 +325,20 @@ def main() -> None:
     st.caption("IT JOB MARKET / VIỆT NAM")
     st.title("Thị trường tuyển dụng IT")
     st.write("Theo dõi nhu cầu tuyển dụng từ TopCV, ITviec và TopDev trong cùng một không gian.")
-    if not args.data.exists():
+    with st.sidebar:
+        source_label = st.selectbox("Nguồn dữ liệu dashboard", ["CSV", "PostgreSQL"], index=1 if args.source == "postgres" else 0)
+        page = st.radio("Trang phân tích", PAGES, key="market_page")
+        refresh = st.selectbox("Tự đọc lại PostgreSQL (giây)", [0, 15, 30, 60, 120], index=[0, 15, 30, 60, 120].index(args.refresh_seconds), disabled=source_label != "PostgreSQL", help="0 để tắt. Chỉ chạy khi phiên dashboard đang mở.")
+        st.button("Đọc lại dữ liệu ngay", key="market_refresh")
+    use_database = source_label == "PostgreSQL"
+    if not use_database and not args.data.exists():
         st.warning(f"Chưa có file dữ liệu: {args.data}")
         return
-    all_df = load_jobs(args.data)
+    try:
+        all_df = prepare_dashboard_jobs(read_database()) if use_database else load_jobs(args.data)
+    except Exception:
+        st.error("Chưa đọc được dữ liệu. Nếu dùng PostgreSQL: bật database, kiểm tra DATABASE_URL và chạy python crawler.py --skip-crawl để tạo analytics views. Không tự chuyển sang CSV khi DB lỗi.")
+        return
     status_path = args.data.parent / "crawl_status.json"
     if not status_path.exists() and args.data.parent.name == "processed":
         status_path = args.data.parent.parent / "raw/crawl_status.json"
@@ -324,16 +352,42 @@ def main() -> None:
         available_languages = sorted({language for items in all_df["_language_list"] for language in items})
         selected_languages = st.multiselect("Ngôn ngữ lập trình", available_languages, placeholder="C++, Python, Java…")
         st.caption("Chọn nhiều ngôn ngữ: hiển thị tin khớp ít nhất một ngôn ngữ.")
+        websites = st.multiselect("Website tuyển dụng", [s["name"] for s in SOURCES.values()], key="market_websites")
         selected_supplementary = st.multiselect("Kỹ năng bổ trợ", sorted({s for items in all_df["_supplementary_list"] for s in items}))
         selected_foreign = st.multiselect("Ngoại ngữ giao tiếp", sorted({s for items in all_df["_foreign_list"] for s in items}))
         english_filter = st.selectbox("Thông tin tiếng Anh", ["Tất cả"] + list(ENGLISH_STATUS_LABELS.values()))
         selected_benefits = st.multiselect("Phúc lợi mong muốn", sorted({s for items in all_df["_benefit_list"] for s in items}))
         benefits_only = st.checkbox("Chỉ tin đã có nội dung phúc lợi")
         st.caption("Trong mỗi nhóm lọc, tin khớp ít nhất một lựa chọn; giữa các nhóm, tin phải khớp đồng thời.")
-        disclosed_only = st.checkbox("Chỉ tin có lương công khai")
+        disclosed_only = st.checkbox("Chỉ tin có khoảng lương đầy đủ")
         st.divider()
         st.caption("Lương cần đăng nhập hoặc thương lượng được để trống khi tính thống kê. Các nguồn có thể được thu thập vào các ngày khác nhau.")
+    filters = dict(keyword=keyword, websites=websites, city=city, model=model, selected_languages=selected_languages,
+        selected_supplementary=selected_supplementary, selected_foreign=selected_foreign, selected_benefits=selected_benefits,
+        english_filter=english_filter, benefits_only=benefits_only, disclosed_only=disclosed_only)
+    def render_current_data():
+        try:
+            current = prepare_dashboard_jobs(read_database()) if use_database else all_df
+        except Exception:
+            st.error("Lần đọc PostgreSQL này thất bại. Kiểm tra kết nối; không hiển thị dữ liệu cũ như thể vừa cập nhật.")
+            return
+        st.caption(f"Nguồn: {'PostgreSQL · truy vấn trực tiếp' if use_database else str(args.data)} · Đọc lúc {datetime.now(ZoneInfo('Asia/Ho_Chi_Minh')):%d/%m/%Y %H:%M:%S} · Chu kỳ DB: {refresh if use_database else 0} giây")
+        filtered = filter_jobs(current, **filters)
+        if page == PAGES[0]:
+            render_market(filtered, current, statuses)
+        else:
+            show_analysis_page(filtered, page)
+    if use_database:
+        st.fragment(run_every=refresh or None)(render_current_data)()
+    else:
+        render_current_data()
+
+
+def filter_jobs(all_df, *, keyword, websites, city, model, selected_languages, selected_supplementary,
+                selected_foreign, selected_benefits, english_filter, benefits_only, disclosed_only):
     df = all_df.copy()
+    if websites:
+        df = df[df.website.isin(websites)]
     if keyword.strip():
         text = df[["title", "company", "skills", "requirements", "supplementary_skills", "foreign_languages", "english_requirement", "benefits"]].agg(" ".join, axis=1)
         df = df[text.str.contains(keyword.strip(), case=False, regex=False)]
@@ -353,6 +407,10 @@ def main() -> None:
         df = df.loc[df["benefits"].str.strip().ne("")]
     if disclosed_only:
         df = df[df["salary_midpoint"].notna()]
+    return df
+
+
+def render_market(df, all_df, statuses):
     overview, *source_tabs, cv_tab = st.tabs(["Tổng quan", "TopCV", "ITviec", "TopDev", "CV → Việc làm phù hợp"])
     with overview:
         with st.container(border=True):

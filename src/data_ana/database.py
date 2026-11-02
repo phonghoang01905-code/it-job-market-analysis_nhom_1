@@ -15,6 +15,7 @@ def connect(database_url: str):
 
 def initialize(connection) -> None:
     connection.execute(files("data_ana").joinpath("schema.sql").read_text(encoding="utf-8"))
+    connection.execute(files("data_ana").joinpath("analytics.sql").read_text(encoding="utf-8"))
 
 
 def update_profile(connection, job_id: int, job: dict, old_benefits="", old_requirements="") -> None:

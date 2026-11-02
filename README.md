@@ -593,7 +593,8 @@ Xem dashboard bằng dữ liệu đã làm sạch:
 python -m streamlit run src/data_ana/dashboard.py -- --data data/processed/jobs.csv
 ```
 
-Dashboard hiện đọc CSV, chưa truy vấn PostgreSQL trực tiếp. Mở file
+Dashboard hỗ trợ CSV hoặc PostgreSQL trực tiếp (`--source postgres`), xem hướng dẫn
+tuần 7–8 bên dưới. Mở file
 [sql/examples.sql](sql/examples.sql) trong công cụ quản lý PostgreSQL để thống kê
 tin theo website, kỹ năng, công ty và lương trực tiếp từ bốn bảng.
 
@@ -611,6 +612,297 @@ python -m pytest -q
 Lệnh trên chạy test tự động; test kết nối PostgreSQL chỉ chạy khi có biến
 `TEST_DATABASE_URL`, nếu không sẽ báo skipped. Không cần cấu hình Telegram/email
 để chạy test vì phần gửi thông báo được giả lập.
+
+## Tuần 5–6 — Phân tích EDA + SQL
+
+EDA là bước khám phá dữ liệu bằng thống kê và biểu đồ để trả lời câu hỏi cụ thể,
+trước khi đưa ra kết luận. Phần này dùng **cùng định nghĩa chỉ số** trong Python
+và PostgreSQL; không cộng số tin sau khi nối kỹ năng vì một tin có nhiều kỹ năng.
+
+### Chạy phân tích và mở kết quả
+
+Tại `D:\Data_Ana`, cập nhật thư viện, bật DB và nạp dữ liệu đã có:
+
+```cmd
+python -m pip install -e .
+python -m data_ana.local_postgres start
+python crawler.py --skip-crawl
+python -m data_ana.analyze --database --out-dir outputs/analysis
+```
+
+Lệnh cuối đọc `DATABASE_URL` trong môi trường/`.env`, không cần chép mật khẩu
+vào lệnh. Nếu chỉ dùng CSV, không cần database:
+
+```cmd
+python -m data_ana.analyze --input data/processed/jobs.csv --out-dir outputs/analysis
+```
+
+Các file tạo trong thư mục đầu ra:
+
+| File | Nội dung / cách dùng |
+| --- | --- |
+| `skills_summary.csv` | Top kỹ năng, số tin, tỷ trọng tin có kỹ năng |
+| `companies_summary.csv`, `cities_summary.csv` | Top công ty và thành phố |
+| `positions_summary.csv` | Vị trí theo tiêu đề gốc |
+| `salary_by_skill.csv`, `salary_by_level.csv`, `salary_by_city.csv` | Lương theo ba chiều, kèm số mẫu |
+| `weekly_jobs.csv`, `monthly_jobs.csv` | Số tin theo tuần/tháng đăng chính xác |
+| `weekly_observed.csv` | Phân bố ngày thu thập đã lưu, tách khỏi ngày đăng |
+| `skills_weekly.csv`, `skills_monthly.csv`, `skill_changes.csv` | Tỷ trọng và thay đổi kỹ năng |
+| `cluster_assignments.csv`, `clusters.csv` | Tin thuộc cụm nào và kỹ năng tiêu biểu từng cụm |
+| `*.png` | Biểu đồ phân tích |
+| `analysis_metadata.json` | Nguồn đầu vào, thời điểm, độ đầy đủ, tham số và kết quả phân cụm |
+
+Đã chạy trên PostgreSQL ngày **02/11/2026**. Bộ kết quả để xem ngay:
+[bảng số liệu và biểu đồ](reports/2026-11-02/),
+[metadata](reports/2026-11-02/analysis_metadata.json).
+Đây là snapshot kết quả của lần chạy đó; chạy lệnh trên để tạo kết quả mới.
+Trong snapshot PostgreSQL này: **218 tin, 168 công ty, 168 ngày đăng chính xác**,
+**40 mẫu khoảng lương đầy đủ, đều thuộc TopCV**. Vì ITviec và TopDev chưa có mẫu
+lương hợp lệ trong bộ này, chưa thể so sánh lương giữa ba website. KMeans chọn
+6 cụm với silhouette cosine khoảng 0,196: các cụm còn chồng lấn, chỉ dùng khám phá.
+
+### Cách hiểu chỉ số
+
+| Chỉ số | Ý nghĩa |
+| --- | --- |
+| `job_count` | Số tin riêng biệt theo website + ID/link, không phải số chỗ tuyển |
+| `share_pct` | Số tin có kỹ năng / tổng số tin trong mẫu × 100 |
+| `salary_count` | Số tin đủ hai đầu khoảng lương hợp lệ trong nhóm |
+| `median_salary` | Trung vị của midpoint khoảng lương, đơn vị VND/tháng |
+| `avg_salary` | Trung bình midpoint, có thể bị ảnh hưởng bởi mức rất cao/thấp |
+| `p25_salary`, `p75_salary` | Phân vị 25%/75% của midpoint, không phải khoảng tin cậy |
+| `share_change_pp` | Thay đổi tỷ trọng kỹ năng, đơn vị **điểm phần trăm** |
+| `growth_pct` | `(số tin kỳ sau - kỳ trước)/kỳ trước × 100`; trống nếu kỳ trước bằng 0 |
+
+Ví dụ: 5 tin Python trong 10 tin là 50%; kỳ sau 6/20 là 30%. Số tin Python tăng 1,
+nhưng tỷ trọng **giảm 20 điểm phần trăm**. Hai chỉ số trả lời hai câu hỏi khác nhau.
+
+Lương chỉ tính `(min+max)/2` khi **đủ hai đầu**, dương và đúng thứ tự.
+Ví dụ 20–30 triệu → midpoint 25 triệu. “Từ 20 triệu”, “Tới 30 triệu”, thỏa thuận
+hoặc cần đăng nhập được loại khỏi mẫu tính midpoint, không điền 0.
+USD đã được ETL đổi theo tỷ giá giả định lưu trên từng tin.
+Trung vị này không phải lương thực nhận; so sánh các nhóm còn chịu ảnh hưởng của city/level.
+Dashboard mặc định chỉ vẽ nhóm có ít nhất **3 tin có lương**, bảng vẫn giữ nhóm ít mẫu.
+
+Tuần bắt đầu **thứ Hai**, tháng theo lịch; múi giờ **Asia/Ho_Chi_Minh**.
+Không thay ngày đăng thiếu bằng ngày crawl. Tin có “2 ngày trước” chưa xác định
+ngày chính xác không được đưa vào biểu đồ ngày đăng. Các khoảng trống giữa kỳ
+được điền 0 để so sánh; 0 có thể là thiếu quan sát. Tuần/tháng đầu và cuối có thể
+chưa đầy đủ. Dữ liệu hiện là mẫu tin còn thu thập được, chưa phải lịch sử toàn bộ thị trường.
+
+Tin nhiều thành phố được tính một lần ở mỗi thành phố nên tổng theo city có thể
+vượt tổng tin. Tên công ty gộp theo chữ thường/khoảng trắng, chưa đối chiếu pháp nhân.
+Kỹ năng trong DB dùng nhãn chuẩn hóa đã lưu ở `job_skills` và `programming_languages`;
+không nhận diện lại mô tả để làm kết quả Python lệch với SQL.
+DB incremental giữ lương/ngày đăng ban đầu, còn raw có thể được crawl lại;
+vì vậy **dùng cùng một nguồn đầu vào khi so sánh số liệu**.
+
+### SQL để trình bày với thầy
+
+ETL tự tạo các **view thông thường** trong PostgreSQL bằng
+[analytics.sql](src/data_ana/analytics.sql). View là một truy vấn được đặt tên;
+không sao chép dữ liệu và đọc được dữ liệu mới ngay sau khi ETL commit.
+Mở [sql/analysis.sql](sql/analysis.sql) trong pgAdmin/DBeaver hoặc công cụ SQL
+đang dùng để chạy từng câu SELECT có chú thích.
+
+```sql
+SELECT * FROM analytics_top_skills ORDER BY job_count DESC, skill LIMIT 10;
+SELECT * FROM analytics_salary_by_level ORDER BY level;
+SELECT * FROM analytics_weekly_jobs ORDER BY week;
+SELECT * FROM analytics_skill_changes ORDER BY share_change_pp DESC, skill;
+```
+
+Các view salary chỉ dùng khoảng lương đủ hai đầu. Luôn đọc `salary_count` trước
+khi kết luận nhóm nào trả cao hơn; không kết luận kỹ năng gây ra mức lương cao.
+
+### Bonus: KMeans theo cụm kỹ năng
+
+Mỗi tin được biến thành vector multi-hot: có Python là 1, không có là 0;
+TF-IDF giảm trọng số kỹ năng xuất hiện quá phổ biến, sau đó chuẩn hóa L2.
+KMeans gom các vector tương tự thành cụm. Chọn k trong **2–6** theo
+[silhouette cosine](https://scikit-learn.org/stable/modules/generated/sklearn.metrics.silhouette_score.html),
+giới hạn theo số mẫu/bộ kỹ năng khác nhau; dùng `random_state=42`, `n_init=20`.
+Có thể ép k, ví dụ:
+
+```cmd
+python -m data_ana.analyze --database --clusters 4 --out-dir outputs/analysis-k4
+```
+
+Tin thiếu kỹ năng giữ cluster trống, không bị ép vào cụm. Xem `top_skills` để hiểu
+cụm; nhãn số 0/1/2 không phải thứ hạng, có thể đổi khi dữ liệu đổi.
+Silhouette gần 0 nghĩa là các cụm còn chồng lấn; đây là phân tích khám phá,
+chưa phải mô hình nghề nghiệp chuẩn hoặc mô hình dự đoán trúng tuyển.
+
+## Tuần 7–8 — Dashboard kết nối PostgreSQL
+
+Đã thêm các trang phân tích vào dashboard Streamlit hiện có và chọn **Metabase**
+cho yêu cầu kết nối công cụ BI với PostgreSQL. Không cần triển khai đồng thời cả
+Power BI, Tableau và Metabase để dùng phần này.
+
+### Streamlit: mở và tự cập nhật
+
+```cmd
+python -m data_ana.local_postgres start
+python crawler.py --skip-crawl
+python -m streamlit run src/data_ana/dashboard.py -- --source postgres --refresh-seconds 60
+```
+
+Mở địa chỉ Streamlit hiển thị, thường `http://localhost:8501`.
+Chọn **Trang phân tích** ở bên trái:
+
+| Trang | Nội dung |
+| --- | --- |
+| Tổng quan & website | Số tin, công ty, độ đầy đủ, tab riêng ba website và CV matching |
+| Kỹ năng & xu hướng | Top skills; số tin theo tuần/tháng; tỷ trọng kỹ năng và tăng/giảm trong mẫu |
+| Lương | Trung vị/P25/P75 theo skill/level/city, số mẫu và lọc nhóm ít mẫu |
+| Công ty & vị trí | Top công ty, thành phố, các tiêu đề vị trí nổi bật |
+| Phân cụm kỹ năng | Bấm chạy KMeans trên chính dữ liệu đang lọc, xem cụm và tải CSV |
+
+Bộ lọc website, vị trí, city, hình thức, kỹ năng, ngoại ngữ và phúc lợi áp dụng
+cho các trang. **PostgreSQL** đọc DB thật; **CSV** đọc file theo `--data`.
+DB lỗi sẽ báo lỗi, không âm thầm chuyển sang CSV.
+
+Khi đang mở phiên PostgreSQL, nội dung được truy vấn lại mỗi **60 giây** bằng
+[Streamlit fragment](https://docs.streamlit.io/1.39.0/develop/api-reference/execution-flow/st.fragment).
+Có thể đổi 15/30/60/120 giây hoặc 0 để tắt, hoặc bấm **Đọc lại dữ liệu ngay**.
+Nhãn trên trang ghi nguồn và thời điểm đọc. Bộ lọc giữ nguyên; danh sách lựa chọn
+mới xuất hiện sau lần đọc lại toàn trang. Auto-refresh **không tự crawl**;
+crawler/scheduler là tiến trình riêng cập nhật DB. Không cache kết quả DB trong phần này.
+
+### Metabase trên máy hiện tại (không cần Docker)
+
+Máy đã có Java; helper tải JAR Metabase **v0.64.1** chính thức lần đầu,
+lưu tại `.tools/metabase` (bỏ qua khi commit Git).
+
+Terminal 1, giữ mở:
+
+```cmd
+python -m data_ana.local_postgres start
+python -m data_ana.local_metabase
+```
+
+Chờ Metabase khởi động xong tại `http://localhost:3000`. Terminal 2:
+
+```cmd
+python -m data_ana.bi --metabase
+```
+
+Script thực hiện những việc sau:
+
+1. Tạo analytics views và user **`data_ana_bi`**, chỉ được SELECT các view phân tích.
+2. Với Metabase local mới, tạo tài khoản admin demo; thông tin đăng nhập và mật
+   khẩu ngẫu nhiên lưu riêng ở `METABASE_ADMIN_EMAIL`, `METABASE_ADMIN_PASSWORD`
+   trong `.env`. Với Metabase đã setup, dùng tài khoản đã điền trong `.env`.
+3. Kết nối PostgreSQL bằng user chỉ đọc, tạo collection **IT Job Market - Nhom 1**
+   và bốn dashboard: tổng quan; kỹ năng & xu hướng; lương; công ty & vị trí.
+4. Chạy thử từng câu hỏi SQL trước khi in link dashboard; lưu link trong
+   `outputs/metabase_links.json`. Chạy lại cập nhật các mục do script quản lý,
+   không tạo thêm bản sao; sửa thủ công các mục này có thể bị ghi đè khi chạy lại.
+
+**Đã kết nối và chạy truy vấn thực tế trên máy ngày 02/11/2026.**
+Các link của lần thiết lập này:
+[Tổng quan](http://localhost:3000/dashboard/2#refresh=60),
+[Kỹ năng & xu hướng](http://localhost:3000/dashboard/3#refresh=60),
+[Lương](http://localhost:3000/dashboard/4#refresh=60),
+[Công ty & vị trí](http://localhost:3000/dashboard/5#refresh=60).
+Trên máy khác, dùng ID/link mà lệnh thiết lập in ra.
+
+Đăng nhập bằng hai giá trị admin trong `.env`, không dùng mật khẩu DB làm mật
+khẩu Metabase. Các link có `#refresh=60` để tự chạy lại truy vấn mỗi 60 giây
+khi trang đang mở; đây là [tùy chọn URL của Metabase](https://www.metabase.com/docs/latest/dashboards/introduction#configuring-a-dashboard-through-its-url).
+Không bật chia sẻ công khai. Nhấn Ctrl+C trong terminal Metabase để dừng;
+sau khi khởi động lại máy, chạy helper để mở lại.
+
+Phân biệt hai loại DB: **tin tuyển dụng vẫn ở PostgreSQL**. Metabase còn cần nơi
+lưu cấu hình tài khoản/dashboard: helper dùng một DB PostgreSQL riêng khi server
+từ 14 trở lên; với PostgreSQL 12 đang có trên máy, helper dùng H2 tại
+`.tools/metabase/appdb` cho demo local. Không xóa thư mục này nếu muốn giữ tài khoản/dashboard.
+Bản Docker bên dưới dùng PostgreSQL 17 riêng cho cấu hình Metabase.
+
+### Metabase bằng Docker (tùy chọn, thuộc phần dashboard)
+
+[compose.yaml](compose.yaml) có PostgreSQL và Metabase + DB cấu hình riêng.
+Cách này cần Docker Desktop; máy hiện tại đang chạy Metabase bằng Java theo
+hướng dẫn phía trên. Dashboard Streamlit tiếp tục chạy bằng lệnh Python.
+
+Nếu chọn PostgreSQL Docker thay cho cluster native cùng cổng 55432, dừng cluster
+native trước. Điền `POSTGRES_PASSWORD` trong `.env`, cập nhật `DATABASE_URL`
+trên host cho khớp.
+Không ghi đè `.env` đang có. Sau đó:
+
+```cmd
+python -m data_ana.local_postgres stop
+docker compose up -d db
+python crawler.py --skip-crawl
+docker compose --profile bi up -d metabase
+```
+
+Metabase tại `http://localhost:3000`.
+Để Metabase trong Docker kết nối DB Docker (thay vì localhost của container), chạy
+script trên host sau khi Metabase sẵn sàng:
+
+```cmd
+python -m data_ana.bi --metabase --db-host db --db-port 5432
+```
+
+Nếu Metabase Docker kết nối cluster native trên host, dùng
+`--db-host host.docker.internal --db-port 55432` và bảo đảm PostgreSQL cho phép
+kết nối từ mạng Docker. `127.0.0.1` trong container trỏ về chính container đó.
+Volume `postgres_data` và `metabase_data` giữ dữ liệu qua các lần chạy;
+`docker compose --profile bi down` dừng dịch vụ và giữ volume.
+Metabase image/DB môi trường được cấu hình theo [tài liệu Docker chính thức](https://www.metabase.com/articles/run-metabase-in-production-with-docker).
+
+### Kiểm thử phần phân tích và dashboard
+
+```cmd
+python -m pip install -e ".[dev]"
+python -m pytest -q
+```
+
+Test DB chạy khi có `TEST_DATABASE_URL`, dùng schema tạm rồi dọn, không sửa dữ liệu
+chính. Đã có kiểm tra SQL/Python khớp chỉ số, lương chỉ trần/sàn, tuần trống,
+mốc ngày đăng/thu thập, phân cụm, xuất bảng/biểu đồ và dashboard đọc bản ghi mới từ DB.
+
+## Deploy dashboard lên Streamlit Community Cloud
+
+Entrypoint dành cho hosting là [streamlit_app.py](streamlit_app.py). File
+`requirements.txt` có dòng `-e .` để cài package `data_ana` từ thư mục `src`.
+Bản mặc định dùng `data/raw/jobs.csv` đã được commit, không phụ thuộc PostgreSQL
+trên máy cá nhân và không cần tải `.env` lên hosting.
+
+Sau khi mã đã ở GitHub, tạo app trên [Streamlit Community Cloud](https://share.streamlit.io/)
+với các giá trị:
+
+| Mục | Giá trị |
+| --- | --- |
+| Repository | `phonghoang01905-code/it-job-market-analysis_nhom_1` |
+| Branch | `main` |
+| Main file path | `streamlit_app.py` |
+| Python | `3.11` trong Advanced settings |
+
+Chạy thử cùng entrypoint trên máy:
+
+```cmd
+python -m pip install -r requirements.txt
+python -m streamlit run streamlit_app.py
+```
+
+Ứng dụng giữ các trang phân tích và phần tải CV. Dữ liệu CSV trên hosting là
+snapshot của repo: muốn đổi dữ liệu, chạy crawler/ETL rồi cập nhật file trên GitHub.
+Auto-refresh PostgreSQL chỉ dùng khi cấu hình database online mà hosting truy cập được.
+Địa chỉ `127.0.0.1:55432` trên máy cá nhân không dùng được từ Cloud.
+Nếu dùng PostgreSQL online đã nạp dữ liệu và tạo analytics views, điền vào
+**App settings → Secrets**, ở cấp gốc của TOML:
+
+```toml
+DATABASE_URL = "postgresql://USER:PASSWORD@HOST:5432/it_job_market?sslmode=require"
+```
+
+Sau đó chọn **PostgreSQL** trong dashboard. `.env` và `.streamlit/secrets.toml`
+được bỏ qua khi commit. Không sửa `src/it_job_market_analysis.egg-info/requires.txt`;
+đó là file metadata tự sinh khi cài dự án.
+Hướng dẫn hosting chính thức: [Deploy](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy),
+[Secrets](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management).
 
 ## Luu y ve thu thap du lieu
 

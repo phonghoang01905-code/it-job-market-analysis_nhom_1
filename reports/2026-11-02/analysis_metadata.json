@@ -1,0 +1,56 @@
+{
+  "generated_at": "2026-11-02T21:24:12.386043+07:00",
+  "source": "PostgreSQL",
+  "jobs": 218,
+  "companies": 168,
+  "known_cities": 8,
+  "sources": {
+    "topcv": 98,
+    "itviec": 70,
+    "topdev": 50
+  },
+  "salary_complete": 40,
+  "posted_dates": 168,
+  "salary_samples_by_source": {
+    "itviec": 0,
+    "topcv": 40,
+    "topdev": 0
+  },
+  "first_posted": "2026-09-24",
+  "last_posted": "2026-10-30",
+  "salary_median": 20000000.0,
+  "libraries": {
+    "pandas": "2.2.3",
+    "scikit-learn": "1.9.1"
+  },
+  "cluster": {
+    "status": "ok",
+    "k": 6,
+    "silhouette_cosine": 0.1961,
+    "random_state": 42,
+    "excluded": 53,
+    "n_features": 60,
+    "trials": [
+      {
+        "k": 2,
+        "silhouette_cosine": 0.1335
+      },
+      {
+        "k": 3,
+        "silhouette_cosine": 0.1592
+      },
+      {
+        "k": 4,
+        "silhouette_cosine": 0.1727
+      },
+      {
+        "k": 5,
+        "silhouette_cosine": 0.1866
+      },
+      {
+        "k": 6,
+        "silhouette_cosine": 0.1961
+      }
+    ]
+  }
+}

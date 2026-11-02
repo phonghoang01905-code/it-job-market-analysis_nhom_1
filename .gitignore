@@ -18,10 +18,15 @@ env/
 .env.*
 !.env.example
 config/sites.json
+.streamlit/secrets.toml
 logs/
 data/postgres/
 *.egg-info/
+build/
+dist/
 .pg-init-*
+.tools/
+/plugins/
 
 # Data outputs
 data/raw/*.csv

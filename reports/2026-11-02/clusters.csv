@@ -1,0 +1,7 @@
+﻿cluster,job_count,top_skills,median_salary,salary_count
+0,20,Agile; Scrum; Jira; SQL; Testing; QA,28750000.0,2
+1,29,AI; Python; SQL; Machine Learning; Testing; CI/CD,16500000.0,3
+2,23,Testing; QA; AI; CI/CD; Go; Python,16750000.0,6
+3,48,AI; Java; JavaScript; Testing; Python; React,21750000.0,8
+4,16,Business Analyst; AI; Power BI; SQL; Testing; Go,20000000.0,5
+5,29,AWS; Azure; AI; Docker; CI/CD; GCP,27500000.0,1
