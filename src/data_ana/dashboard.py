@@ -321,7 +321,12 @@ def show_source(df: pd.DataFrame, all_df: pd.DataFrame, source: str, status: dic
 def main(argv=None) -> None:
     args = parse_args(argv)
     st.set_page_config(page_title="IT Job Market · Việt Nam", page_icon="📊", layout="wide")
-    st.markdown("<style>[data-testid='stMetricValue']{font-size:1.8rem} .block-container{padding-top:2rem} [data-baseweb='tab']{font-size:1rem;padding:12px 22px} [data-testid='stCaptionContainer']{line-height:1.6}</style>", unsafe_allow_html=True)
+    st.markdown("""<style>
+        [data-testid='stMetricValue'] {font-size:1.8rem}
+        .block-container {padding-top:5rem}
+        [data-baseweb='tab'] {font-size:1rem;padding:12px 22px}
+        [data-testid='stCaptionContainer'] {line-height:1.6}
+    </style>""", unsafe_allow_html=True)
     st.caption("IT JOB MARKET / VIỆT NAM")
     st.title("Thị trường tuyển dụng IT")
     st.write("Theo dõi nhu cầu tuyển dụng từ TopCV, ITviec và TopDev trong cùng một không gian.")
