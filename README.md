@@ -904,6 +904,22 @@ Sau đó chọn **PostgreSQL** trong dashboard. `.env` và `.streamlit/secrets.t
 Hướng dẫn hosting chính thức: [Deploy](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/deploy),
 [Secrets](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/secrets-management).
 
+### Cấu hình Vercel
+
+Đã có cấu hình riêng dùng **Streamlit 1.60 / ASGI** trong [deploy/vercel](deploy/vercel/README.md).
+Bản local và Community Cloud vẫn dùng thư viện hiện tại. Chuẩn bị thư mục upload:
+
+```powershell
+python scripts/prepare_vercel.py
+vercel.cmd login
+vercel.cmd --cwd .tools/vercel-stage --prod --yes
+```
+
+Chờ đăng nhập thành công trước khi chạy deploy. Không upload cả thư mục `.tools`;
+chỉ thư mục `.tools/vercel-stage` do script tạo được dùng cho lệnh trên.
+Cấu hình này đã kiểm tra ASGI và CV minh họa trên máy; chưa có URL production
+được xác nhận khi quyền Vercel chưa được kết nối thành công.
+
 ## Luu y ve thu thap du lieu
 
 - Kiem tra `robots.txt` va dieu khoan su dung cua tung website truoc khi crawl.

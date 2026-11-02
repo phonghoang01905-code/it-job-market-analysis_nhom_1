@@ -37,12 +37,12 @@ SKILL_NAMES.update({alias.casefold(): name for name, aliases in ALIASES.items() 
 SKILL_NAMES.update({"c": "C", "go": "Go"})
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("data/raw/jobs.csv"))
     parser.add_argument("--source", choices=["csv", "postgres"], default="csv")
     parser.add_argument("--refresh-seconds", type=int, choices=[0, 15, 30, 60, 120], default=60)
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def normalize(value: str) -> str:
@@ -318,8 +318,8 @@ def show_source(df: pd.DataFrame, all_df: pd.DataFrame, source: str, status: dic
     show_jobs(filtered, source)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv=None) -> None:
+    args = parse_args(argv)
     st.set_page_config(page_title="IT Job Market · Việt Nam", page_icon="📊", layout="wide")
     st.markdown("<style>[data-testid='stMetricValue']{font-size:1.8rem} .block-container{padding-top:2rem} [data-baseweb='tab']{font-size:1rem;padding:12px 22px} [data-testid='stCaptionContainer']{line-height:1.6}</style>", unsafe_allow_html=True)
     st.caption("IT JOB MARKET / VIỆT NAM")

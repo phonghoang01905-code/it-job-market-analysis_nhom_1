@@ -43,4 +43,5 @@ outputs/*
 Thumbs.db
 .vscode/
 .idea/
+.vercel/
 
