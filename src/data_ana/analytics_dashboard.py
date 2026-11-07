@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from data_ana.analytics import prepare_jobs, summary, time_summary, skill_timeseries, skill_changes, cluster_jobs
+from data_ana.salary_dashboard import show_salary_analysis
 
 PAGES = ["Tổng quan & website", "Kỹ năng & xu hướng", "Lương", "Công ty & vị trí", "Phân cụm kỹ năng"]
 
@@ -69,25 +70,7 @@ def show_analysis_page(frame: pd.DataFrame, page: str):
         st.caption("share_change_pp: chênh lệch điểm phần trăm tỷ trọng. growth_pct trống khi số tin tuần trước bằng 0; không báo tăng vô hạn.")
         download(skill_changes(df, basis), "skill_changes")
     elif page == "Lương":
-        st.caption("Chỉ tính midpoint khi có đủ hai đầu khoảng lương VND/tháng. Không dùng lương thương lượng, chỉ có trần/sàn hay lương cần đăng nhập. Median/P25/P75 mô tả khoảng chào tuyển, không phải lương thực nhận.")
-        a, b, c = st.columns(3)
-        a.metric("Đủ khoảng lương", f"{df.salary_midpoint.count()} / {len(df)}")
-        median = df.salary_midpoint.median()
-        b.metric("Trung vị midpoint", f"{median/1_000_000:.2f} triệu" if pd.notna(median) else "Chưa đủ dữ liệu")
-        c.metric("Tỷ lệ đủ khoảng lương", f"{df.salary_midpoint.notna().mean()*100:.1f}%")
-        by_source = df.groupby("source", as_index=False).agg(job_count=("_key", "size"), salary_count=("salary_midpoint", "count"))
-        with st.expander("Độ đầy đủ lương theo website"):
-            st.dataframe(by_source, hide_index=True, use_container_width=True)
-            st.caption("Nguồn có salary_count = 0 chưa đủ dữ liệu để so sánh lương, không có nghĩa mức lương bằng 0.")
-        dimension = st.selectbox("Phân nhóm lương", ["skill", "level", "city"], format_func=lambda v: {"skill":"Kỹ năng", "level":"Cấp bậc", "city":"Thành phố"}[v], key="eda_salary_dimension")
-        minimum = st.number_input("Số tin có lương tối thiểu trong nhóm", 1, 100, 3, key="eda_salary_minimum")
-        table = summary(df, dimension)
-        eligible = table[table.salary_count.ge(minimum)].copy()
-        eligible["median_million_vnd"] = eligible.median_salary/1_000_000
-        eligible = eligible.sort_values(["median_million_vnd", dimension], ascending=[False, True])
-        bar(eligible, dimension, "median_million_vnd", "Trung vị midpoint (triệu VND/tháng)")
-        st.caption("Bảng bên dưới giữ cả nhóm ít mẫu để thấy độ đầy đủ. salary_count là số tin được dùng tính lương; nhóm cùng kỹ năng có thể khác city/level.")
-        download(table, "salary_"+dimension)
+        show_salary_analysis(frame)
     elif page == "Công ty & vị trí":
         a, b = st.columns(2)
         with a:

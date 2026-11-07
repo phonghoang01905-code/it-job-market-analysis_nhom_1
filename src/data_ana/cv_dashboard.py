@@ -6,6 +6,7 @@ import hashlib
 
 import pandas as pd
 import streamlit as st
+from data_ana.salary_dashboard import show_salary_detail
 
 from data_ana.cv_matching import Candidate, CEFR, LEVELS, MAX_CHARS, WEIGHTS, candidate_from_text, extract_cv_text, rank_jobs
 from data_ana.etl import SKILL_ALIASES
@@ -136,6 +137,7 @@ def show_cv_matcher(df: pd.DataFrame) -> None:
         "Ưu tiên": r["priority"], "Điểm khớp /100": r["score"], "Rating /5": r["stars"],
         "Vị trí": r["job"].get("title", ""), "Công ty": r["job"].get("company", ""),
         "Website": r["job"].get("website", r["job"].get("source", "")),
+        "Nhóm lương": r["job"].get("salary_group_label", ""),
         "Địa điểm": r["job"].get("location", ""), "Lương": r["job"].get("salary_display", r["job"].get("salary_text", "")),
         "Quy đổi VND/tháng": r["job"].get("salary_vnd", ""),
         "Kỹ năng trùng": "; ".join(r["matched_skills"]), "Chưa thấy trong CV": "; ".join(r["missing_skills"]),
@@ -147,6 +149,8 @@ def show_cv_matcher(df: pd.DataFrame) -> None:
     index = st.selectbox("Xem lý do rating của một công việc", list(range(len(selected_results))), format_func=lambda i: f"{selected_results[i]['score']:.1f}/100 · {selected_results[i]['job'].get('title', '')} · {selected_results[i]['job'].get('company', '')}", key=f"cv_result_{version}")
     chosen = selected_results[index]
     st.markdown(f"**{'★'*chosen['stars']}{'☆'*(5-chosen['stars'])} · {chosen['score']:.1f}/100 · Ưu tiên ứng tuyển: {chosen['priority']}**")
+    with st.expander("Mức lương và căn cứ ước tính của công việc"):
+        show_salary_detail(chosen["job"])
     st.write("Kỹ năng trùng: " + ", ".join(chosen["matched_skills"]))
     st.write("Công nghệ/kỹ năng trong tin chưa thấy trong CV: " + (", ".join(chosen["missing_skills"]) or "Không có trong các mục đã nhận diện"))
     st.caption("Các mục chưa thấy trong CV không mặc nhiên là điều kiện bắt buộc; tin có thể nêu ưu tiên hoặc các công nghệ thay thế nhau.")

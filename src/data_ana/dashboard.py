@@ -16,7 +16,8 @@ from data_ana.job_profile import ENGLISH_STATUS_LABELS, extract_profile
 from data_ana.cv_dashboard import show_cv_matcher
 from data_ana.analytics_dashboard import PAGES, show_analysis_page
 from data_ana.data_access import read_database
-from data_ana.salary import UNDISCLOSED_SALARY, salary_label, monthly_salary_label
+from data_ana.salary_estimation import add_salary_estimates, GROUP_LABELS
+from data_ana.salary_dashboard import show_salary_detail
 
 
 SOURCES = {
@@ -103,9 +104,6 @@ def prepare_dashboard_jobs(frame: pd.DataFrame) -> pd.DataFrame:
         if column not in df:
             df[column] = float("nan")
         df[column] = pd.to_numeric(df[column], errors="coerce").where(lambda s: s > 0)
-    df["salary_display"] = [salary_label(text, low, high) for text, low, high in zip(df.salary_text, df.salary_min, df.salary_max)]
-    df["salary_vnd"] = [monthly_salary_label(low, high) for low, high in zip(df.salary_min, df.salary_max)]
-    df.loc[df["salary_display"].eq(UNDISCLOSED_SALARY), "salary_vnd"] = UNDISCLOSED_SALARY
     df["source"] = df["source"].str.strip().str.lower()
     if "posted_date_text" in df:
         df["posted_date"] = df["posted_date"].where(df["posted_date"].ne(""), df["posted_date_text"])
@@ -128,7 +126,7 @@ def prepare_dashboard_jobs(frame: pd.DataFrame) -> pd.DataFrame:
     df["city"] = df["location"].apply(city_label)
     df["work_model"] = df["work_model"].where(df["work_model"].isin(MODEL_NAMES), "Unknown")
     df["website"] = df["source"].map(lambda s: SOURCES.get(s, {}).get("name", s))
-    return df
+    return add_salary_estimates(df)
 
 
 def explode_skills(df: pd.DataFrame) -> pd.DataFrame:
@@ -172,11 +170,11 @@ def horizontal_bar_chart(
 
 
 def show_metrics(df: pd.DataFrame) -> None:
-    total, companies, disclosed, descriptions = st.columns(4)
+    total, companies, disclosed, estimated = st.columns(4)
     total.metric("Tin tuyển dụng", f"{len(df):,}")
     companies.metric("Nhà tuyển dụng", f"{df.loc[df['company'].ne(''), 'company'].nunique():,}")
-    disclosed.metric("Đủ khoảng lương", f"{df['salary_midpoint'].notna().sum():,} / {len(df):,}")
-    descriptions.metric("Có mô tả chi tiết", f"{df['description'].str.strip().ne('').sum():,} / {len(df):,}")
+    disclosed.metric("A · Lương công khai", f"{df['salary_group'].eq('A').sum():,}")
+    estimated.metric("B · Có thể ước tính", f"{df['salary_group'].eq('B').sum():,}")
 
 
 def show_jobs(df: pd.DataFrame, key: str) -> None:
@@ -184,26 +182,33 @@ def show_jobs(df: pd.DataFrame, key: str) -> None:
     if df.empty:
         st.info("Không có tin phù hợp với bộ lọc đang chọn.")
         return
-    st.caption("Lương từ thẻ tin hoặc trường baseSalary trong HTML công khai của tin gốc. USD được quy đổi theo tỷ giá của dữ liệu (mặc định 25.000 VND/USD). Tin chưa nêu số tiền được ghi rõ; tin chỉ có mức tối đa/tối thiểu giữ nguyên giới hạn đó.")
-    columns = ["website", "title", "company", "location", "salary_display", "salary_vnd", "programming_languages", "supplementary_skills", "foreign_languages", "english_requirement", "english_status", "benefits", "benefit_tags", "requirements", "work_model", "skills", "posted_date", "scraped_at", "url"]
+    st.caption("A · Lương công khai  |  B · Ước tính từ tin tương tự, có dấu ≈  |  C · NaN khi chưa đủ dữ liệu. Mở chi tiết một tin để xem căn cứ và các công việc đối chiếu.")
+    columns = ["website", "title", "company", "location", "salary_group_label", "salary_display", "salary_vnd", "salary_comparison_min", "salary_comparison_max", "salary_comparison_midpoint", "salary_peer_count", "salary_estimate_min", "salary_estimate_max", "salary_estimate_reason", "salary_observed_evidence", "salary_role", "salary_experience_band", "salary_peers", "salary_text", "programming_languages", "supplementary_skills", "foreign_languages", "english_requirement", "english_status", "benefits", "benefit_tags", "requirements", "work_model", "skills", "posted_date", "scraped_at", "url"]
     table = df[columns].copy()
+    table["salary_peers"] = table["salary_peers"].map(lambda peers: json.dumps(peers, ensure_ascii=False))
     table["work_model"] = table["work_model"].map(MODEL_NAMES)
     table["scraped_at"] = pd.to_datetime(table["scraped_at"], utc=True, errors="coerce").dt.tz_convert("Asia/Ho_Chi_Minh").dt.strftime("%d/%m/%Y %H:%M")
     table["programming_languages"] = table["programming_languages"].replace("", "Chưa thấy nêu trong dữ liệu")
     table["english_status"] = table["english_status"].map(ENGLISH_STATUS_LABELS)
     for field in ("supplementary_skills", "foreign_languages", "english_requirement", "benefits", "benefit_tags"):
         table[field] = table[field].replace("", "Chưa có thông tin trong dữ liệu")
-    names = {"website": "Website", "title": "Vị trí", "company": "Công ty", "location": "Địa điểm", "salary_display": "Lương công khai", "salary_vnd": "Quy đổi VND/tháng", "programming_languages": "Ngôn ngữ lập trình", "requirements": "Yêu cầu ứng viên", "work_model": "Hình thức", "skills": "Kỹ năng", "posted_date": "Ngày đăng / thời gian gốc", "scraped_at": "Thu thập (giờ VN)", "url": "Tin gốc"}
+    names = {"website": "Website", "title": "Vị trí", "company": "Công ty", "location": "Địa điểm", "salary_display": "Mức lương", "salary_vnd": "Quy đổi VND/tháng", "salary_group_label": "Nhóm lương", "salary_peer_count": "Tin đối chiếu", "salary_comparison_midpoint": "Midpoint tham khảo (VND)", "salary_estimate_min": "Ước tính từ (VND)", "salary_estimate_max": "Ước tính đến (VND)", "salary_estimate_reason": "Căn cứ lương", "salary_text": "Lương gốc", "programming_languages": "Ngôn ngữ lập trình", "requirements": "Yêu cầu ứng viên", "work_model": "Hình thức", "skills": "Kỹ năng", "posted_date": "Ngày đăng / thời gian gốc", "scraped_at": "Thu thập (giờ VN)", "url": "Tin gốc"}
     names.update(supplementary_skills="Kỹ năng bổ trợ", foreign_languages="Ngoại ngữ", english_requirement="Tiếng Anh — trích dẫn", english_status="Mức yêu cầu tiếng Anh", benefits="Phúc lợi — nội dung gốc", benefit_tags="Nhóm phúc lợi")
-    st.dataframe(table.rename(columns=names), hide_index=True, use_container_width=True, column_config={"Tin gốc": st.column_config.LinkColumn("Tin gốc", display_text="Mở tin"), "Vị trí": st.column_config.TextColumn(width="large"), "Lương công khai": st.column_config.TextColumn(width="large"), "Quy đổi VND/tháng": st.column_config.TextColumn(width="large"), "Kỹ năng": st.column_config.TextColumn(width="large")})
+    names.update(salary_comparison_min="So sánh từ (VND)", salary_comparison_max="So sánh đến (VND)", salary_observed_evidence="Nguồn lương công khai", salary_role="Nhóm vị trí", salary_experience_band="Nhóm kinh nghiệm", salary_peers="Tin đối chiếu (JSON)")
+    visible = ["Website", "Vị trí", "Nhóm lương", "Mức lương", "Công ty", "Địa điểm", "Tin đối chiếu", "Ngôn ngữ lập trình", "Kỹ năng bổ trợ", "Mức yêu cầu tiếng Anh", "Nhóm phúc lợi", "Hình thức", "Tin gốc"]
+    colors = {"A": ("#5eead4", "#10352d"), "B": ("#fcd34d", "#3c2d12"), "C": ("#cbd5e1", "#252c3b")}
+    def group_style(value):
+        foreground, background = colors[str(value)[0]]
+        return f"color:{foreground};background-color:{background};font-weight:bold"
+    styled = table.rename(columns=names).style.map(group_style, subset=["Nhóm lương"])
+    st.dataframe(styled, hide_index=True, use_container_width=True, column_order=visible,
+        column_config={"Tin gốc": st.column_config.LinkColumn("Tin gốc", display_text="Mở tin"), "Vị trí": st.column_config.TextColumn(width="medium"), "Mức lương": st.column_config.TextColumn(width="large"), "Nhóm lương": st.column_config.TextColumn(width="medium")})
     st.download_button("Tải CSV đang xem", table.rename(columns=names).to_csv(index=False).encode("utf-8-sig"), file_name=f"viec_lam_{key}.csv", mime="text/csv", key=f"download_{key}")
     with st.expander("Đọc mô tả đầy đủ của một tin"):
         selected = st.selectbox("Chọn tin tuyển dụng", df.index.tolist(), format_func=lambda i: f"{df.loc[i, 'title']} · {df.loc[i, 'company']}", key=f"detail_{key}")
         if selected is not None:
             row = df.loc[selected]
-            st.markdown("**Mức lương của tin tuyển dụng**")
-            st.write(row["salary_display"])
-            st.write("Quy đổi: " + row["salary_vnd"])
+            show_salary_detail(row)
             st.markdown("**Kỹ năng bổ trợ và ngoại ngữ**")
             st.write("Kỹ năng bổ trợ: " + (row["supplementary_skills"] or "Chưa có thông tin"))
             st.write("Ngoại ngữ: " + (row["foreign_languages"] or "Chưa có thông tin"))
@@ -371,12 +376,13 @@ def main(argv=None) -> None:
         selected_benefits = st.multiselect("Phúc lợi mong muốn", sorted({s for items in all_df["_benefit_list"] for s in items}))
         benefits_only = st.checkbox("Chỉ tin đã có nội dung phúc lợi")
         st.caption("Trong mỗi nhóm lọc, tin khớp ít nhất một lựa chọn; giữa các nhóm, tin phải khớp đồng thời.")
-        disclosed_only = st.checkbox("Chỉ tin có khoảng lương đầy đủ")
+        salary_groups = st.multiselect("Nhóm dữ liệu lương", list(GROUP_LABELS), format_func=GROUP_LABELS.get, key="market_salary_groups")
+        disclosed_only = st.checkbox("Chỉ tin có khoảng lương công khai đầy đủ")
         st.divider()
-        st.caption("Tin chưa có số tiền trong dữ liệu công khai hoặc chỉ nêu thương lượng không được dùng tính lương. Các nguồn có thể được thu thập vào các ngày khác nhau.")
+        st.caption("Lương ước tính luôn có nhãn B và dấu ≈. Nhóm C giữ NaN, không dùng tính thống kê. Các nguồn có thể được thu thập vào các ngày khác nhau.")
     filters = dict(keyword=keyword, websites=websites, city=city, model=model, selected_languages=selected_languages,
         selected_supplementary=selected_supplementary, selected_foreign=selected_foreign, selected_benefits=selected_benefits,
-        english_filter=english_filter, benefits_only=benefits_only, disclosed_only=disclosed_only)
+        english_filter=english_filter, benefits_only=benefits_only, disclosed_only=disclosed_only, salary_groups=salary_groups)
     def render_current_data():
         try:
             current = prepare_dashboard_jobs(read_database()) if use_database else all_df
@@ -396,7 +402,7 @@ def main(argv=None) -> None:
 
 
 def filter_jobs(all_df, *, keyword, websites, city, model, selected_languages, selected_supplementary,
-                selected_foreign, selected_benefits, english_filter, benefits_only, disclosed_only):
+                selected_foreign, selected_benefits, english_filter, benefits_only, disclosed_only, salary_groups=None):
     df = all_df.copy()
     if websites:
         df = df[df.website.isin(websites)]
@@ -418,7 +424,9 @@ def filter_jobs(all_df, *, keyword, websites, city, model, selected_languages, s
     if benefits_only:
         df = df.loc[df["benefits"].str.strip().ne("")]
     if disclosed_only:
-        df = df[df["salary_midpoint"].notna()]
+        df = df[df["salary_group"].eq("A") & df["salary_comparison_midpoint"].notna()]
+    if salary_groups:
+        df = df[df["salary_group"].isin(salary_groups)]
     return df
 
 

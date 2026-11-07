@@ -57,11 +57,12 @@ def test_salary_table_shows_amounts_conversion_and_clear_missing_status(tmp_path
     from pathlib import Path
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=30).run()
     assert not app.exception
-    table = next(t.value for t in app.dataframe if "Lương công khai" in t.value.columns).set_index("Vị trí")
+    table = next(t.value for t in app.dataframe if "Mức lương" in t.value.columns).set_index("Vị trí")
     assert table.loc["DevSecOps", "Quy đổi VND/tháng"] == "62.500.000 – 75.000.000 ₫/tháng"
     assert table.loc["Developer", "Quy đổi VND/tháng"] == "Tối đa 30.000.000 ₫/tháng"
-    assert table.loc["Unknown salary", "Lương công khai"] == "Thỏa thuận (chưa nêu số tiền)"
-    assert table.loc["Empty salary", "Lương công khai"] == "Thỏa thuận (chưa nêu số tiền)"
-    assert table.loc["Unknown salary", "Quy đổi VND/tháng"] == "Thỏa thuận (chưa nêu số tiền)"
-    assert table.loc["Stored salary", "Lương công khai"] == "20.000.000 – 30.000.000 ₫/tháng"
-    assert not table["Lương công khai"].str.contains("Login to view salary|Sign in to view salary").any()
+    assert table.loc["Unknown salary", "Mức lương"] == "NaN · Chưa đủ dữ liệu"
+    assert table.loc["Empty salary", "Mức lương"] == "NaN · Chưa đủ dữ liệu"
+    assert table.loc["Unknown salary", "Quy đổi VND/tháng"] == "NaN · Chưa đủ dữ liệu"
+    assert table.loc["Stored salary", "Mức lương"] == "20.000.000 – 30.000.000 ₫/tháng"
+    assert pd.isna(table.loc["Unknown salary", "Midpoint tham khảo (VND)"])
+    assert not table["Mức lương"].str.contains("Login to view salary|Sign in to view salary").any()

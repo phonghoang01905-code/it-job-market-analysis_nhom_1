@@ -137,19 +137,64 @@ Crawler đọc thêm trường này, đối chiếu đúng tin theo URL/tiêu đ
 và kỳ trả lương. Không dùng `estimatedSalary`, `min_estimate`, `max_estimate`
 hoặc giá trị lọc tìm kiếm làm lương tuyển dụng.
 
-Dashboard hiển thị **Lương công khai** kèm **Quy đổi VND/tháng** trong bảng tin,
+Dashboard hiển thị **Mức lương** kèm nhóm A/B/C trong bảng tin,
 phần đọc chi tiết và bảng gợi ý theo CV. Ví dụ: `2,500 - 3,000 USD/month` tương ứng
 `62.500.000 – 75.000.000 ₫/tháng` với tỷ giá 25.000 VND/USD. `Up to 30.000.000 VND`
 hiển thị **Tối đa 30.000.000 ₫/tháng**, không được coi là khoảng lương đầy đủ.
 Lương theo năm chia 12; lương theo giờ/ngày không tự quy đổi sang tháng.
 Tỷ giá ETL cấu hình bằng `USD_VND_RATE`; raw CSV dùng tỷ giá mặc định 25.000.
 
-Dashboard ưu tiên hiển thị số tiền lấy được từ tin hoặc các cột lương đã lưu.
-Nếu chuỗi gốc còn là lời nhắc đăng nhập nhưng các cột lương đã có số tiền,
-bảng vẫn hiển thị số tiền đó. Khi không tìm thấy số tiền, tất cả website đều
-hiển thị **Thỏa thuận (chưa nêu số tiền)** trong bảng tin, chi tiết và gợi ý CV.
-Đây là nhãn hiển thị cho tin thiếu số tiền, không phải xác nhận nhà tuyển dụng
-đã ghi “thỏa thuận”. Không tự gán lương ước lượng khi chưa có căn cứ từ tin.
+Dashboard ưu tiên số tiền từ tin hoặc các cột lương đã lưu, kể cả khi chuỗi
+gốc còn là lời nhắc đăng nhập. Các cụm lương rõ ràng trong tiêu đề như
+`Upto 25tr` cũng được giữ đúng giới hạn, không bị thay bằng ước tính cao hơn.
+
+### Phân nhóm lương A/B/C và ước tính từ công việc tương tự
+
+| Nhóm | Khi nào dùng | Hiển thị / xử lý |
+|---|---|---|
+| **A · Công khai** | Tin có mức lương cụ thể, kể cả chỉ có trần/sàn | Giữ số tiền và chuẩn hóa về VND/tháng |
+| **B · Ước tính** | Tin thiếu lương nhưng đủ thông tin và có nhóm so sánh đáng tin cậy | `Ước tính ≈ … ₫/tháng`, kèm danh sách tin đối chiếu |
+| **C · Thiếu dữ liệu** | Thiếu thông tin, ít tin tương tự hoặc nhóm lương quá phân tán | Các cột số giữ `NaN`; giao diện ghi `NaN · Chưa đủ dữ liệu` |
+
+Mô-đun [salary_estimation.py](src/data_ana/salary_estimation.py) đối chiếu trên
+**toàn bộ dữ liệu trước khi lọc dashboard**. Do đó, chọn một website hoặc từ khóa
+không tự làm thay đổi mức ước tính của cùng một tin.
+
+Điều kiện dùng làm mẫu: khoảng lương công khai có đủ hai đầu hợp lệ, thu thập
+trong **180 ngày**, cùng nhóm vị trí, cùng thành phố cụ thể và cùng nhóm kinh
+nghiệm. Nếu cả hai tin có số năm thì chênh lệch tối đa **2 năm**. Không tự suy
+cấp bậc từ số tiền; lấy cấp bậc nêu trong tin hoặc số năm trong yêu cầu/tiêu đề.
+Không ép tin thiếu địa điểm/kinh nghiệm hoặc có nhiều thành phố vào một nhóm.
+
+Kỹ năng phải có độ giao nhau Jaccard tối thiểu **0,2**. Điểm sắp xếp = 80% Jaccard
+kỹ năng + 20% Jaccard từ trong tiêu đề. Chọn tối đa **7 tin**, cần ít nhất **3 tin
+từ 2 công ty**, tối đa 2 tin/công ty; gộp bản trùng cùng công ty/tiêu đề/city/level.
+Chỉ dùng lương công khai làm mẫu, không lấy kết quả ước tính làm mẫu cho tin khác.
+
+Ví dụ ba tin tương tự có lương **20–30**, **22–32**, **24–34 triệu/tháng** thì
+ước tính là **22–32 triệu/tháng** (trung vị từng đầu khoảng). Đây là khoảng tham
+khảo của nhóm, không phải khoảng tin cậy thống kê hoặc mức nhà tuyển dụng cam kết.
+Nếu IQR midpoint/trung vị > 0,6 hoặc midpoint lớn nhất/nhỏ nhất > 3 thì giữ NaN.
+
+Trong trang **Lương**, ba thẻ màu thể hiện nhóm A/B/C. Có thể chọn **Công khai +
+ước tính** hoặc **Chỉ lương công khai**; biểu đồ dùng màu xanh cho A và cam cho B.
+Chọn một tin để xem lý do phân nhóm, công ty/link/ngày thu thập của các tin đối
+chiếu và biểu đồ khoảng lương. Bộ lọc **Nhóm dữ liệu lương** áp dụng cho cả bảng
+tin và gợi ý CV; lương ước tính không tự cộng điểm phù hợp CV.
+
+Các cột `salary_min`, `salary_max`, `salary_text` gốc trong CSV/PostgreSQL **không
+bị ghi đè**. Dashboard tính thêm `salary_observed_*`, `salary_estimate_min/max`,
+`salary_estimate_midpoint`, `salary_comparison_min/max/midpoint`, `salary_group`,
+`salary_peer_count`, lý do và danh sách mẫu. Nhóm C giữ NaN trong các cột số,
+không gán 0. CSV tải từ dashboard chứa cả cột số, nhãn và `Tin đối chiếu (JSON)`.
+Số tin A+B không phải số quan sát lương độc lập, vì B sử dụng lại mẫu A.
+SQL/Metabase và báo cáo EDA hiện vẫn tính trên số lương gốc; lựa chọn A+B là chế
+độ so sánh trong Streamlit, không làm thay đổi dữ liệu gốc của database.
+
+Với bộ 218 tin ngày 07/11/2026: **89 tin A**, **2 tin B**, **127 tin C**. Nhóm A
+bao gồm 4 tin đọc thêm mức tiền rõ ràng trong tiêu đề. Số B còn ít do mẫu lương
+công khai tương tự chưa đủ cho phần lớn vị trí; cần crawl thêm dữ liệu để tăng
+độ phủ, không giảm điều kiện chỉ để lấp hết giá trị thiếu.
 
 Ngày 06/11/2026 đã đọc lại HTML công khai lưu cùng bộ dữ liệu 218 tin, bổ sung
 số tiền cho **16/70 tin ITviec** và **16/50 tin TopDev**. Đây là bổ sung dữ liệu
@@ -726,7 +771,10 @@ Ví dụ 20–30 triệu → midpoint 25 triệu. “Từ 20 triệu”, “Tớ
 hoặc cần đăng nhập được loại khỏi mẫu tính midpoint, không điền 0.
 USD đã được ETL đổi theo tỷ giá giả định lưu trên từng tin.
 Trung vị này không phải lương thực nhận; so sánh các nhóm còn chịu ảnh hưởng của city/level.
-Dashboard mặc định chỉ vẽ nhóm có ít nhất **3 tin có lương**, bảng vẫn giữ nhóm ít mẫu.
+Trang **Lương** cho chọn ngưỡng số tin khi vẽ biểu đồ (mặc định 1 để nhìn thấy
+cả nhóm B còn ít mẫu). Bảng vẫn giữ nhóm ít mẫu; cần đọc số tin trong tooltip
+trước khi so sánh. Chế độ A+B chỉ dùng các mức ước tính đã qua điều kiện ở mục
+phân nhóm lương phía trên; các báo cáo EDA/SQL gốc vẫn dùng số tiền công khai.
 
 Tuần bắt đầu **thứ Hai**, tháng theo lịch; múi giờ **Asia/Ho_Chi_Minh**.
 Không thay ngày đăng thiếu bằng ngày crawl. Tin có “2 ngày trước” chưa xác định
