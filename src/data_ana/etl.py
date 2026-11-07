@@ -17,6 +17,7 @@ from data_ana.sources import canonical_url, benefits_text
 from data_ana.job_profile import extract_profile
 from data_ana.languages import extract_languages
 from data_ana.utils import clean_text, infer_level, infer_work_model, unaccent
+from data_ana.salary import normalize_salary
 
 
 SKILL_ALIASES = {
@@ -59,55 +60,6 @@ def extract_normalized_skills(title: str, description: str, raw_skills) -> list[
     if any(s.casefold() == "go" for s in labels) or re.search(r"\bgo (?:developer|engineer|programming)\b", text, re.I):
         found.add("Go")
     return sorted(found)
-
-
-def decimal_number(token: str) -> Decimal:
-    token = token.replace(" ", "")
-    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", token):
-        token = re.sub(r"[.,]", "", token)
-    else:
-        token = token.replace(",", ".")
-    return Decimal(token)
-
-
-def normalize_salary(text: str, usd_vnd_rate: Decimal) -> dict:
-    result = dict(salary_currency=None, salary_period=None, salary_min_original=None,
-                  salary_max_original=None, salary_min=None, salary_max=None,
-                  usd_vnd_rate=usd_vnd_rate)
-    value = unaccent(text)
-    if not value or any(w in value for w in ["thoa thuan", "negotiable", "competitive", "canh tranh", "login", "log in", "sign in", "dang nhap"]):
-        return result
-    amounts = re.findall(r"\d+(?:[.,]\d+)*", value)
-    if not amounts:
-        return result
-    usd = "$" in value or "usd" in value
-    million = bool(re.search(r"trieu|\d\s*(?:m|tr)\b", value))
-    if not usd and not million and not re.search(r"\bvnd\b|\bdong\b|₫|\d\s*k\b", value):
-        return result
-    multiplier = Decimal(1_000_000 if million else 1_000 if re.search(r"\d\s*k\b", value) else 1)
-    if usd and million:
-        return result  # Ambiguous mixed currency: retain raw text, no guess.
-    numbers = [decimal_number(a) * multiplier for a in amounts]
-    if len(numbers) > 2:
-        return result
-    lower, upper = (min(numbers), max(numbers)) if len(numbers) == 2 else (numbers[0], numbers[0])
-    if len(numbers) == 1:
-        if any(w in value for w in ["toi ", "up to", "upto", "duoi ", "under "]):
-            lower = None
-        elif any(w in value for w in ["tu ", "from ", "tren ", "over "]):
-            upper = None
-    period = "month"
-    for unit, pattern in [("hour", r"/\s*(?:h\b|hour)|per hour|moi gio|/gio"), ("day", r"/\s*(?:day|ngay)|per day|moi ngay"), ("year", r"/\s*(?:year|nam)|per year|annually|moi nam")]:
-        if re.search(pattern, value):
-            period = unit
-            break
-    currency = "USD" if usd else "VND"
-    result.update(salary_currency=currency, salary_period=period, salary_min_original=lower, salary_max_original=upper)
-    if period in {"month", "year"}:
-        factor = (usd_vnd_rate if usd else Decimal(1)) / (12 if period == "year" else 1)
-        result.update(salary_min=(lower * factor).quantize(Decimal("1")) if lower is not None else None,
-                      salary_max=(upper * factor).quantize(Decimal("1")) if upper is not None else None)
-    return result
 
 
 def normalized_city(location: str) -> str:

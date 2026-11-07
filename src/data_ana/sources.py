@@ -10,7 +10,8 @@ from bs4 import BeautifulSoup
 from data_ana.models import JobPost
 from data_ana.languages import refresh_languages
 from data_ana.job_profile import refresh_profile
-from data_ana.utils import clean_text, extract_skills, infer_level, infer_work_model, parse_salary_vnd
+from data_ana.salary import public_salary_text
+from data_ana.utils import clean_text, extract_skills, infer_level, infer_work_model, parse_salary_vnd, unaccent
 
 
 def canonical_url(url: str) -> str:
@@ -56,7 +57,8 @@ def structured_jobs(soup: BeautifulSoup) -> list[dict]:
             for item in value:
                 visit(item)
         elif isinstance(value, dict):
-            if value.get("@type") == "JobPosting":
+            kind = value.get("@type")
+            if kind == "JobPosting" or isinstance(kind, list) and "JobPosting" in kind:
                 jobs.append(value)
             visit(value.get("@graph", []))
 
@@ -69,6 +71,20 @@ def structured_jobs(soup: BeautifulSoup) -> list[dict]:
         except (ValueError, TypeError):
             continue
     return jobs
+
+
+def detail_job(post: JobPost, jobs: list[dict]) -> dict:
+    """Avoid taking salary/description from recommended jobs on the same page."""
+    for job in jobs:
+        if post.url and job.get("url") and canonical_url(str(job["url"])) == canonical_url(post.url):
+            return job
+    title_key = lambda value: re.sub(r"\W+", "", unaccent(str(value)))
+    for job in jobs:
+        if not job.get("url") and title_key(job.get("title") or job.get("name") or "") == title_key(post.title):
+            return job
+    if len(jobs) == 1 and not any(jobs[0].get(k) for k in ("url", "title", "name")):
+        return jobs[0]
+    return {}
 
 
 def nextjs_chunks(soup: BeautifulSoup) -> list[str]:
@@ -175,11 +191,15 @@ def parse_topdev(html: str, site: dict) -> list[JobPost]:
 def enrich_detail(post: JobPost, html: str, selectors: dict) -> bool:
     soup = BeautifulSoup(html, "lxml")
     jobs = structured_jobs(soup)
-    recognized = bool(jobs)
-    if jobs:
-        # JobPosting belongs to this detail page; salary fields are deliberately
-        # not used because these sites can require sign-in to reveal salary.
-        data = jobs[0]
+    data = detail_job(post, jobs)
+    recognized = bool(data)
+    if data:
+        # This JSON-LD is served in the public HTML without authentication.
+        # Read actual baseSalary only; do not use estimatedSalary/filter values.
+        salary = public_salary_text(data.get("baseSalary"))
+        if salary:
+            post.salary_text = salary
+            post.salary_min, post.salary_max = parse_salary_vnd(salary)
         post.description = html_text(str(data.get("description") or ""))
         post.posted_date = str(data.get("datePosted") or post.posted_date)
         benefit = benefits_text(data.get("jobBenefits"))

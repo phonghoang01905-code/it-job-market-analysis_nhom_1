@@ -42,3 +42,26 @@ def test_english_and_benefit_filters_show_real_profile_fields(tmp_path, monkeypa
     benefit = next(w for w in app.multiselect if w.label == "Phúc lợi mong muốn")
     benefit.set_value(["Đào tạo ngoại ngữ"]).run()
     assert not app.exception
+
+
+def test_salary_table_shows_amounts_conversion_and_clear_missing_status(tmp_path, monkeypatch):
+    path = tmp_path / "jobs.csv"
+    pd.DataFrame([
+        {"source": "itviec", "title": "DevSecOps", "salary_text": "2,500 - 3,000 USD/month", "salary_min": 62_500_000, "salary_max": 75_000_000, "url": "https://example.com/1"},
+        {"source": "topdev", "title": "Developer", "salary_text": "Up to 30.000.000 VND/month", "salary_max": 30_000_000, "url": "https://example.com/2"},
+        {"source": "topdev", "title": "Unknown salary", "salary_text": "Login to view salary", "url": "https://example.com/3"},
+        {"source": "itviec", "title": "Stored salary", "salary_text": "Sign in to view salary", "salary_min": 20_000_000, "salary_max": 30_000_000, "url": "https://example.com/4"},
+        {"source": "topcv", "title": "Empty salary", "salary_text": "", "url": "https://example.com/5"},
+    ]).to_csv(path, index=False)
+    monkeypatch.setattr(sys, "argv", ["dashboard", "--data", str(path)])
+    from pathlib import Path
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=30).run()
+    assert not app.exception
+    table = next(t.value for t in app.dataframe if "Lương công khai" in t.value.columns).set_index("Vị trí")
+    assert table.loc["DevSecOps", "Quy đổi VND/tháng"] == "62.500.000 – 75.000.000 ₫/tháng"
+    assert table.loc["Developer", "Quy đổi VND/tháng"] == "Tối đa 30.000.000 ₫/tháng"
+    assert table.loc["Unknown salary", "Lương công khai"] == "Thỏa thuận (chưa nêu số tiền)"
+    assert table.loc["Empty salary", "Lương công khai"] == "Thỏa thuận (chưa nêu số tiền)"
+    assert table.loc["Unknown salary", "Quy đổi VND/tháng"] == "Thỏa thuận (chưa nêu số tiền)"
+    assert table.loc["Stored salary", "Lương công khai"] == "20.000.000 – 30.000.000 ₫/tháng"
+    assert not table["Lương công khai"].str.contains("Login to view salary|Sign in to view salary").any()

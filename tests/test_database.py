@@ -90,3 +90,17 @@ def test_original_spoken_language_tag_survives_database_load(isolated_database):
     database.load_incremental([job], "test")
     with isolated_database(None) as c:
         assert c.execute("SELECT foreign_languages,english_status FROM jobs").fetchone() == (["Tiếng Anh"], "mentioned")
+
+
+def test_salary_backfill_fills_unknown_only_and_preserves_observation_date(isolated_database):
+    original = sample(salary_text="Sign in to view salary")
+    database.load_incremental([original], "test")
+    database.load_incremental([sample(salary_text="Up to 3000 USD", scraped_at="2026-11-06T00:00:00+00:00")], "test")
+    with isolated_database(None) as c:
+        row = c.execute("SELECT salary_min, salary_max, scraped_at, count(*) OVER () FROM jobs").fetchone()
+        assert row == (None, Decimal("75000000"), original["scraped_at"], 1)
+    # Neither another salary nor a later login-only snapshot erases that ceiling.
+    database.load_incremental([sample(salary_text="1000 - 5000 USD")], "test")
+    database.load_incremental([sample(salary_text="Login to view salary")], "test")
+    with isolated_database(None) as c:
+        assert c.execute("SELECT salary_text, salary_min, salary_max FROM jobs").fetchone() == ("Up to 3000 USD", None, Decimal("75000000"))

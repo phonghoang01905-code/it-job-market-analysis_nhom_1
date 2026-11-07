@@ -97,29 +97,10 @@ def extract_skills(text: str, extra_skills: list[str] | None = None) -> list[str
 
 
 def parse_salary_vnd(salary_text: str) -> tuple[int | None, int | None]:
-    text = unaccent(salary_text)
-    if not text or any(token in text for token in ["thoa thuan", "negotiable", "canh tranh", "sign in", "login", "dang nhap"]):
-        return None, None
+    from decimal import Decimal
+    from data_ana.salary import normalize_salary
 
-    tokens = re.findall(r"\d+(?:[.,]\d+)*", text)
-    numbers = [float(re.sub(r"[.,]", "", t) if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", t) else t.replace(",", ".")) for t in tokens]
-    if not numbers:
-        return None, None
-
-    multiplier = 1
-    if "$" in text or "usd" in text:
-        multiplier = 25_000
-    elif "trieu" in text or re.search(r"\d\s*m\b", text):
-        multiplier = 1_000_000
-    elif "k" in text:
-        multiplier = 1_000
-
-    values = [int(number * multiplier) for number in numbers]
-    if len(values) == 1:
-        if any(t in text for t in ["toi", "up to", "duoi", "upto"]):
-            return None, values[0]
-        if any(t in text for t in ["from", "tu ", "tren", "over"]):
-            return values[0], None
-        return values[0], values[0]
-    return min(values), max(values)
+    salary = normalize_salary(salary_text, Decimal("25000"))
+    return tuple(int(salary[key]) if salary[key] is not None else None
+                 for key in ("salary_min", "salary_max"))
 

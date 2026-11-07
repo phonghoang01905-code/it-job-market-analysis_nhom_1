@@ -128,6 +128,48 @@ Dashboard có tab Tổng quan và tab riêng TopCV / ITviec / TopDev, bộ lọc
 bảng tin có link gốc, phần đọc mô tả và nút tải CSV theo bộ lọc.
 Thời điểm thu thập và mức độ đầy đủ được hiển thị riêng cho từng nguồn.
 
+### Lương ITviec / TopDev và cách cập nhật
+
+`Sign in to view salary` và `Login to view salary` là lời nhắc của website nguồn,
+không phải mức lương. Thẻ danh sách có thể hiện lời nhắc này trong khi HTML công
+khai của chính trang chi tiết vẫn chứa `JobPosting.baseSalary` có số tiền.
+Crawler đọc thêm trường này, đối chiếu đúng tin theo URL/tiêu đề rồi giữ tiền tệ
+và kỳ trả lương. Không dùng `estimatedSalary`, `min_estimate`, `max_estimate`
+hoặc giá trị lọc tìm kiếm làm lương tuyển dụng.
+
+Dashboard hiển thị **Lương công khai** kèm **Quy đổi VND/tháng** trong bảng tin,
+phần đọc chi tiết và bảng gợi ý theo CV. Ví dụ: `2,500 - 3,000 USD/month` tương ứng
+`62.500.000 – 75.000.000 ₫/tháng` với tỷ giá 25.000 VND/USD. `Up to 30.000.000 VND`
+hiển thị **Tối đa 30.000.000 ₫/tháng**, không được coi là khoảng lương đầy đủ.
+Lương theo năm chia 12; lương theo giờ/ngày không tự quy đổi sang tháng.
+Tỷ giá ETL cấu hình bằng `USD_VND_RATE`; raw CSV dùng tỷ giá mặc định 25.000.
+
+Dashboard ưu tiên hiển thị số tiền lấy được từ tin hoặc các cột lương đã lưu.
+Nếu chuỗi gốc còn là lời nhắc đăng nhập nhưng các cột lương đã có số tiền,
+bảng vẫn hiển thị số tiền đó. Khi không tìm thấy số tiền, tất cả website đều
+hiển thị **Thỏa thuận (chưa nêu số tiền)** trong bảng tin, chi tiết và gợi ý CV.
+Đây là nhãn hiển thị cho tin thiếu số tiền, không phải xác nhận nhà tuyển dụng
+đã ghi “thỏa thuận”. Không tự gán lương ước lượng khi chưa có căn cứ từ tin.
+
+Ngày 06/11/2026 đã đọc lại HTML công khai lưu cùng bộ dữ liệu 218 tin, bổ sung
+số tiền cho **16/70 tin ITviec** và **16/50 tin TopDev**. Đây là bổ sung dữ liệu
+cho các bản chụp trước đó, không phải 120 tin mới đăng ngày 06/11. Những tin còn
+lại chưa có số tiền sử dụng được trong HTML đã thu thập.
+
+Đọc lại HTML đã lưu và tạo lại dữ liệu sạch/PostgreSQL:
+
+```bash
+python -m data_ana.enrich_existing --sources itviec topdev
+python -m data_ana.etl --input data/raw/jobs.csv
+python -m streamlit run streamlit_app.py
+```
+
+Thêm `--refresh` vào lệnh `enrich_existing` khi muốn tải lại trang gốc thay vì
+dùng HTML đã lưu. Crawler vẫn kiểm tra robots.txt và dừng nguồn khi bị 403/429.
+Nếu không dùng PostgreSQL, thêm `--no-db` vào lệnh ETL. Sau khi đổi dữ liệu, tải
+lại dashboard; bản Streamlit Cloud đọc CSV được commit trên GitHub nên cần đẩy
+cả thay đổi code và `data/raw/jobs.csv` để bản online nhận mức lương mới.
+
 ### Tải CV và gợi ý việc làm phù hợp
 
 Dashboard có tab **CV → Việc làm phù hợp**, đối chiếu hồ sơ với tin đã thu thập
@@ -565,8 +607,10 @@ thêm tin rồi tạo các liên kết trong `job_skills`.
 Toàn bộ lần nạp dùng một transaction: nếu lỗi thì rollback để không ghi dở bốn bảng.
 Xem [PostgreSQL INSERT / ON CONFLICT](https://www.postgresql.org/docs/current/sql-insert.html).
 
-Đây là chế độ **chỉ thêm tin mới**: tin cũ trong PostgreSQL không được cập nhật lại
-lương/mô tả khi tin nguồn thay đổi. Các trường bổ sung `requirements`,
+Đây là chế độ **chỉ thêm tin mới**: mức lương đã có và mô tả của tin cũ trong
+PostgreSQL được giữ nguyên khi tin nguồn thay đổi. Riêng tin có cả hai đầu lương
+NULL được bổ sung một lần nếu dữ liệu mới có số tiền thật; không thay đổi ngày
+thu thập ban đầu, không tạo thêm tin trùng. Các trường bổ sung `requirements`,
 `programming_languages`, `language_evidence`, kỹ năng bổ trợ, ngoại ngữ và phúc lợi được làm giàu cho cả tin cũ khi chạy ETL,
 để dữ liệu lịch sử cũng dùng được bộ lọc ngôn ngữ. Nó khác CSV raw, nơi một tin có thể được crawl lại.
 Không tự xóa tin hết hạn. Hai website đăng cùng một vị trí vẫn là hai tin theo hai nguồn.

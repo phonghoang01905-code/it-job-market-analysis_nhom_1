@@ -85,6 +85,15 @@ def test_merge_preserves_other_sites_and_existing_description(tmp_path):
     assert [asdict(p) for p in merge_posts([], path)] == [asdict(p) for p in merged]
 
 
+def test_refresh_login_placeholder_does_not_erase_previously_collected_salary(tmp_path):
+    path = tmp_path / "jobs.csv"
+    original = JobPost(source="itviec", title="Dev", url="https://itviec.com/it-jobs/1", salary_text="2500 - 3000 USD/month", salary_min=62_500_000, salary_max=75_000_000)
+    write_csv([original], path)
+    refreshed = JobPost(source="itviec", title="Dev", url=original.url, salary_text="Sign in to view salary")
+    post, = merge_posts([refreshed], path)
+    assert (post.salary_text, post.salary_min, post.salary_max) == (original.salary_text, original.salary_min, original.salary_max)
+
+
 def test_429_on_one_source_does_not_prevent_next_source(monkeypatch):
     from data_ana import crawl as module
 

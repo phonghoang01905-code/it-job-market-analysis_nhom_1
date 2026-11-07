@@ -55,6 +55,14 @@ def load_incremental(jobs: list[dict], database_url: str) -> dict:
                     (job.get("programming_languages", []), Jsonb(job.get("language_evidence", {})), job.get("requirements", ""), job.get("requirements", ""), existing[0]),
                 )
                 update_profile(connection, existing[0], job, existing[1], existing[2])
+                # Fill a previously unknown salary once it is available in the
+                # public listing. Preserve already recorded amounts and dates.
+                if job.get("salary_min") is not None or job.get("salary_max") is not None:
+                    connection.execute("""UPDATE jobs SET salary_text=%(salary_text)s,
+                        salary_currency=%(salary_currency)s, salary_period=%(salary_period)s,
+                        salary_min_original=%(salary_min_original)s, salary_max_original=%(salary_max_original)s,
+                        salary_min=%(salary_min)s, salary_max=%(salary_max)s, usd_vnd_rate=%(usd_vnd_rate)s
+                        WHERE id=%(id)s AND salary_min IS NULL AND salary_max IS NULL""", {**job, "id": existing[0]})
                 counts["skipped"] += 1
                 continue
             company_id = None

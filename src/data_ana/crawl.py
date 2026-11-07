@@ -19,6 +19,7 @@ from urllib3.util.retry import Retry
 from data_ana.models import JobPost
 from data_ana.languages import refresh_languages
 from data_ana.job_profile import refresh_profile
+from data_ana.salary import requires_salary_login
 from data_ana.sources import canonical_url, enrich_detail, parse_topdev
 from data_ana.utils import (
     absolute_url,
@@ -371,6 +372,11 @@ def merge_posts(posts: list[JobPost], path: Path) -> list[JobPost]:
             for field in ("description", "requirements", "benefits", "posted_date", "company", "location", "job_id"):
                 if not getattr(post, field):
                     setattr(post, field, getattr(previous, field))
+            if (post.salary_min is None and post.salary_max is None
+                    and (not post.salary_text or requires_salary_login(post.salary_text))
+                    and (previous.salary_min is not None or previous.salary_max is not None)):
+                post.salary_text = previous.salary_text
+                post.salary_min, post.salary_max = previous.salary_min, previous.salary_max
         merged[key] = post
     for post in merged.values():
         refresh_languages(post)

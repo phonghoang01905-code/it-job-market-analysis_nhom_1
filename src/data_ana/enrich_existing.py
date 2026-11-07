@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,10 @@ logger = logging.getLogger("data_ana.enrichment")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bổ sung kỹ năng, ngoại ngữ, phúc lợi cho các tin đã lưu")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Bổ sung lương công khai, kỹ năng, ngoại ngữ, phúc lợi cho các tin đã lưu")
     parser.add_argument("--input", type=Path, default=Path("data/raw/jobs.csv"))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--config", type=Path, default=Path("config/sites.example.json"))
@@ -89,7 +93,7 @@ def main():
                     write_json(output.parent / "enrichment_report.json", report)
         finally:
             session.close()
-        status.update(with_benefits=sum(bool(p.benefits) for p in selected), with_foreign_languages=sum(bool(p.foreign_languages) for p in selected), with_supplementary_skills=sum(bool(p.supplementary_skills) for p in selected))
+        status.update(with_salary=sum(p.salary_min is not None or p.salary_max is not None for p in selected), with_benefits=sum(bool(p.benefits) for p in selected), with_foreign_languages=sum(bool(p.foreign_languages) for p in selected), with_supplementary_skills=sum(bool(p.supplementary_skills) for p in selected))
         status["pending"] = max(0, status["total"]-status["fetched"]-status["cached"]-status["unavailable"])
         status["status"] = "partial" if status["unavailable"] or status["pending"] else "ok"
         write_daily_json(selected, output.parent / f"{today()}_{name}_profile.json", name)
