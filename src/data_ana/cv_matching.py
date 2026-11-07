@@ -140,6 +140,15 @@ def minimum_experience(job: dict) -> tuple[float | None, str]:
             years = float(match.group(1).replace(",", "."))
             if 0 <= years <= 60:
                 return years, text[max(0, match.start()-30):match.end()+100]
+    metadata = re.search(r"kinh nghiem \(website\):\s*(.+)$", normalized)
+    if metadata:
+        value = metadata.group(1)
+        if re.search(r"not required|khong yeu cau|no experience", value):
+            return 0, text[metadata.start():]
+        values = [float(v.replace(",", ".")) for v in re.findall(r"(\d+(?:[.,]\d+)?)\s*(?:years?\b|nam\b)", value)]
+        values = [v for v in values if 0 <= v <= 60]
+        if values:
+            return min(values), text[metadata.start():]
     level = infer_level(str(job.get("title") or ""))
     return (0, "Vị trí thực tập/fresher") if level in {"Intern", "Fresher"} else (None, "Tin chưa nêu số năm kinh nghiệm rõ ràng")
 

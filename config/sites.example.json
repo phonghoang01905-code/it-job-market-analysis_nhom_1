@@ -1,4 +1,5 @@
 {
+  "salary_qualified_only": true,
   "request": {
     "user_agent": "DataAnaStudentProject/1.1 (+https://github.com/phonghoang01905-code/it-job-market-analysis_nhom_1)",
     "delay_seconds": 4,

@@ -6,6 +6,12 @@ import pytest
 from data_ana.cv_matching import Candidate, candidate_from_text, certificates, extract_cv_text, match_job, minimum_experience, rank_jobs
 
 
+def test_public_website_experience_metadata_is_used_only_after_explicit_requirements():
+    assert minimum_experience({"requirements": "Python SQL.\nKinh nghiệm (website): 2 years, 4 years"})[0] == 2
+    assert minimum_experience({"requirements": "Minimum 5 years of experience.\nKinh nghiệm (website): 2 years, 4 years"})[0] == 5
+    assert minimum_experience({"requirements": "Python SQL.\nKinh nghiệm (website): Not required"})[0] == 0
+
+
 def job(**overrides):
     return {"source": "itviec", "title": "Python Developer", "company": "Example", "url": "https://example.com/1",
         "requirements": "Required skills: Python, SQL, Docker. At least 2 years of experience building applications.",

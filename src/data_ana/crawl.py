@@ -141,8 +141,8 @@ def make_page_url(url: str, page: int, page_param: str = "page") -> str:
     if page <= 1:
         return url
     parts = urlsplit(url)
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
-    query[page_param] = str(page)
+    query = [(key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True) if key != page_param]
+    query.append((page_param, str(page)))
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 
@@ -229,12 +229,25 @@ def crawl(
         site_posts: list[JobPost] = []
         seen_jobs: set[str] = set()
         seen_ids: set[str] = set()
+        known_urls = set(site.get("skip_known_urls", []))
+        known_ids = set(site.get("skip_known_ids", []))
+        detail_requests = 0
         status = {
             "attempted_at": datetime.now(timezone.utc).isoformat(),
             "status": "running", "message": "", "pages": 0,
             "collected": 0, "with_description": 0, "detail_errors": 0,
+            "skipped_known": 0, "detail_requests": 0,
         }
         statuses[site["name"]] = status
+        def checkpoint():
+            status.update(collected=len(site_posts), with_description=sum(bool(p.description) for p in site_posts), detail_requests=detail_requests)
+            if site.get("checkpoint_path"):
+                path = Path(site["checkpoint_path"])
+                write_csv(site_posts, path)
+                state_path = path.with_suffix(".status.json")
+                temp = state_path.with_suffix(".json.tmp")
+                temp.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+                temp.replace(state_path)
         logger.info("Starting %s", site["name"])
         page_limit = int(max_pages if max_pages is not None else site.get("max_pages", 1))
         if page_limit < 1:
@@ -249,6 +262,7 @@ def crawl(
         if robots_parser is None:
             status.update(status="blocked", message="Không đọc được robots.txt; chưa gửi request lấy tin.")
             continue
+        delay = max(delay, float(robots_parser.crawl_delay(user_agent) or 0)) if hasattr(robots_parser, "crawl_delay") else delay
         seen_urls: set[str] = set()
         for list_url in site.get("list_urls", []):
             if not robots_parser.can_fetch(user_agent, list_url):
@@ -269,6 +283,9 @@ def crawl(
                     response = session.get(url, timeout=timeout)
                     response.raise_for_status()
                 except requests.RequestException as exc:
+                    if isinstance(exc, requests.HTTPError) and exc.response is not None and exc.response.status_code == 404 and page > 1:
+                        logger.info("End of pagination at %s", url)
+                        break
                     logger.warning("Stop crawling %s: %s", url, exc)
                     status.update(status="partial" if site_posts else "error", message=str(exc))
                     stop_crawling = True
@@ -279,23 +296,36 @@ def crawl(
                     if post.url and post.url not in seen_jobs and (not post.job_id or post.job_id not in seen_ids):
                         unique_page[post.job_id or post.url] = post
                 page_posts = list(unique_page.values())
-                if job_limit is not None:
-                    page_posts = page_posts[:max(0, job_limit - len(site_posts))]
                 if not page_posts:
-                    if not site_posts:
+                    if not site_posts and not status["skipped_known"]:
                         status.update(status="empty", message="Không tìm thấy tin IT; kiểm tra cấu trúc trang hoặc bộ lọc.")
                     break
                 seen_jobs.update(p.url for p in page_posts)
                 seen_ids.update(p.job_id for p in page_posts if p.job_id)
+                status["pages"] += 1
+                new_posts = [p for p in page_posts if p.url not in known_urls and (not p.job_id or p.job_id not in known_ids)]
+                status["skipped_known"] += len(page_posts)-len(new_posts)
+                page_posts = new_posts
+                if job_limit is not None:
+                    page_posts = page_posts[:max(0, job_limit - len(site_posts))]
+                if not page_posts:
+                    checkpoint()
+                    time.sleep(delay)
+                    continue
                 posts.extend(page_posts)
                 site_posts.extend(page_posts)
-                status["pages"] += 1
                 logger.info("Fetched %s jobs from page %s: %s", len(page_posts), page, url)
                 time.sleep(delay)
 
                 if site.get("fetch_descriptions", False):
-                    for index, post in enumerate(page_posts, start=1):
+                    detail_posts = sorted(page_posts, key=lambda p: (p.salary_min is None and p.salary_max is None, p.level == "Unknown")) if site.get("detail_salary_first") else page_posts
+                    for index, post in enumerate(detail_posts, start=1):
+                        if site.get("fetch_missing_details_only") and post.description and post.requirements:
+                            continue
+                        if site.get("max_detail_jobs") is not None and detail_requests >= int(site["max_detail_jobs"]):
+                            break
                         try:
+                            detail_requests += 1
                             found = fetch_description(
                                 session, post, site, user_agent, robots_parser, timeout
                             )
@@ -314,8 +344,12 @@ def crawl(
                         else:
                             logger.info("Description %s/%s: %s", index, len(page_posts), "saved" if found else "unavailable")
                         time.sleep(delay)
+                        if index % 10 == 0:
+                            checkpoint()
+                    checkpoint()
                     if stop_crawling:
                         break
+                checkpoint()
                 if job_limit is not None and len(site_posts) >= job_limit:
                     break
             if stop_crawling:
@@ -330,6 +364,7 @@ def crawl(
             status["status"] = "ok" if site_posts else "empty"
             if job_limit and 0 < len(site_posts) < job_limit:
                 status.update(status="partial", message=f"Thu được {len(site_posts)}/{job_limit} tin trong giới hạn trang; không thêm tin trùng để đủ số.")
+        checkpoint()
 
     session.close()
     return posts
@@ -426,8 +461,12 @@ def main() -> None:
     status_path.write_text(json.dumps(old_statuses, ensure_ascii=False, indent=2), encoding="utf-8")
     if not posts:
         raise RuntimeError("No job posts were collected; no output files were written.")
-    combined = merge_posts(posts, args.out)
-    write_csv(combined, args.out)
+    if config.get("salary_qualified_only"):
+        from data_ana.salary_selection import update_salary_dataset
+        combined, _ = update_salary_dataset(posts, args.out)
+    else:
+        combined = merge_posts(posts, args.out)
+        write_csv(combined, args.out)
     print(f"Saved {len(posts)} new/refreshed jobs; {len(combined)} total rows in {args.out}")
     sources = sorted({post.source for post in posts})
     source = sources[0] if len(sources) == 1 else "multiple"

@@ -122,11 +122,13 @@ def topdev_metadata(soup: BeautifulSoup) -> dict[str, dict]:
     chunks = nextjs_chunks(soup)
     decoder = json.JSONDecoder()
     records = {}
+    transport = {}
 
     def visit(value):
         if isinstance(value, dict):
             if "job_category_id" in value and "title" in value and "id" in value:
-                records[str(value["id"])] = value
+                previous = records.get(str(value["id"]), {})
+                records[str(value["id"])] = {key: previous.get(key, item) if isinstance(item, str) and item.startswith("$") else item for key, item in {**previous, **value}.items()}
                 return
             for item in value.values():
                 visit(item)
@@ -140,10 +142,36 @@ def topdev_metadata(soup: BeautifulSoup) -> dict[str, dict]:
         for match in re.finditer(r"(?:^|\n)[0-9a-f]+:", stream):
             try:
                 payload, _ = decoder.raw_decode(stream, match.end())
+                transport[match.group().strip().rstrip(":")] = payload
                 visit(payload)
             except ValueError:
                 continue
-    return records
+    texts = topdev_text_references(soup)
+
+    def resolve(value, seen=frozenset()):
+        if isinstance(value, str):
+            reference = re.fullmatch(r"\$([0-9a-f]+)(?::(.+))?", value)
+            if not reference or value in seen or len(seen) > 20:
+                return value if not reference else ""
+            key, path = reference.groups()
+            target = texts.get(key, transport.get(key, ""))
+            for part in path.split(":") if path else []:
+                if isinstance(target, str) and target.startswith("$"):
+                    target = resolve(target, seen | {value})
+                if isinstance(target, list) and part.isdigit() and int(part) < len(target):
+                    target = target[int(part)]
+                elif isinstance(target, dict):
+                    target = target.get(part, "")
+                else:
+                    return ""
+            return resolve(target, seen | {value})
+        if isinstance(value, dict):
+            return {key: resolve(item, seen) for key, item in value.items()}
+        if isinstance(value, list):
+            return [resolve(item, seen) for item in value]
+        return value
+
+    return {key: resolve(value) for key, value in records.items()}
 
 
 def parse_topdev(html: str, site: dict) -> list[JobPost]:
@@ -167,13 +195,26 @@ def parse_topdev(html: str, site: dict) -> list[JobPost]:
         title = clean_text(link.get_text(" ", strip=True))
         salary = card.select_one('span[class*="text-[#e4007f]"]')
         salary_text = clean_text(salary.get_text(" ", strip=True)) if salary else ""
+        public_salary = data.get("salary")
+        if isinstance(public_salary, dict):
+            amount = public_salary_text({"currency": public_salary.get("currency"), "value": {
+                "unitText": public_salary.get("unit"), "value": public_salary.get("value"),
+                "minValue": public_salary.get("min"), "maxValue": public_salary.get("max")}})
+            if amount:
+                salary_text = amount
         location = card.select_one('div[class*="grid-cols-2"] span.line-clamp-1')
         skills = [clean_text(a.get_text(" ", strip=True)) for a in card.select('a[href^="/jobs/search?keyword="]')]
+        if isinstance(data.get("skills_arr"), list):
+            skills.extend(clean_text(value) for value in data["skills_arr"] if isinstance(value, str) and not value.startswith("$"))
         context = " ".join([title, data.get("job_types_str", ""), " ".join(skills)])
         salary_min, salary_max = parse_salary_vnd(salary_text)
+        requirements = benefits_text(data.get("requirements_original", ""))
+        experience_text = data.get("experiences_str")
+        if isinstance(experience_text, str) and experience_text and not experience_text.startswith("$"):
+            requirements = (requirements + "\nKinh nghiệm (website): " + clean_text(experience_text)).strip()
         posts[url] = JobPost(
             source=site["name"], title=title,
-            company=clean_text(data.get("company", {}).get("display_name", "")),
+            company=clean_text((data.get("company") or {}).get("display_name", "")) if isinstance(data.get("company"), dict) else "",
             location=clean_text(location.get_text(" ", strip=True)) if location else "",
             salary_text=salary_text, salary_min=salary_min, salary_max=salary_max,
             level=infer_level(title + " " + data.get("job_levels_str", "")),
@@ -181,6 +222,9 @@ def parse_topdev(html: str, site: dict) -> list[JobPost]:
             skills=sorted(set(skills + extract_skills(context))),
             posted_date=clean_text(data.get("published", {}).get("date", "")),
             job_id=job_id, url=url,
+            description=benefits_text(data.get("responsibilities_original", "")),
+            requirements=requirements,
+            benefits=benefits_text(data.get("benefits_original") or data.get("benefits_v2") or []),
         )
     for post in posts.values():
         refresh_languages(post)
@@ -246,6 +290,9 @@ def enrich_detail(post: JobPost, html: str, selectors: dict) -> bool:
         if not post.requirements:
             value = resolve(metadata.get("requirements_original", ""))
             post.requirements = benefits_text(value)
+        experience_text = metadata.get("experiences_str")
+        if isinstance(experience_text, str) and experience_text and not experience_text.startswith("$") and "Kinh nghiệm (website):" not in post.requirements:
+            post.requirements = (post.requirements + "\nKinh nghiệm (website): " + clean_text(experience_text)).strip()
         if not post.benefits:
             post.benefits = benefits_text(resolve(metadata.get("benefits_original") or metadata.get("benefits_v2") or []))
         recognized = recognized or bool(metadata)

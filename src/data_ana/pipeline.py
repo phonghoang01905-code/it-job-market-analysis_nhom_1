@@ -65,7 +65,12 @@ def run_pipeline(args) -> int:
             old_statuses.update(statuses)
             write_json(status_path, old_statuses)
             if posts:
-                write_csv(merge_posts(posts, args.raw), args.raw)
+                if config.get("salary_qualified_only"):
+                    from data_ana.salary_selection import update_salary_dataset
+                    _, qualified = update_salary_dataset(posts, args.raw)
+                    report["salary_selection"] = {"archive_rows": len(qualified), "qualified_rows": int(qualified.salary_group.isin(["A", "B"]).sum()), "excluded_rows": int(qualified.salary_group.eq("C").sum())}
+                else:
+                    write_csv(merge_posts(posts, args.raw), args.raw)
                 logger.info("Đã lưu %s tin mới/thu thập lại", len(posts))
             elif not args.raw.exists():
                 raise RuntimeError("Không crawl được tin và chưa có dữ liệu cũ để xử lý")

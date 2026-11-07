@@ -127,6 +127,9 @@ def test_429_on_one_source_does_not_prevent_next_source(monkeypatch):
 
 def test_pagination_retains_filters():
     assert make_page_url("https://topdev.vn/jobs/search?keyword=Python", 2) == "https://topdev.vn/jobs/search?keyword=Python&page=2"
+    from urllib.parse import parse_qs, urlsplit
+    paged = make_page_url("https://itviec.com/it-jobs?salary_ranges%5B%5D=500&salary_ranges%5B%5D=10000&salary_ranges_changed=true", 2)
+    assert parse_qs(urlsplit(paged).query) == {"salary_ranges[]": ["500", "10000"], "salary_ranges_changed": ["true"], "page": ["2"]}
 
 
 def test_crawl_target_counts_unique_jobs_across_pages(monkeypatch):
@@ -163,12 +166,62 @@ def test_crawl_target_counts_unique_jobs_across_pages(monkeypatch):
 def test_topdev_requirements_resolve_public_utf8_text_reference():
     from data_ana.sources import enrich_detail
     requirement = "<p>Yêu cầu: Python3 và C++17, ưu tiên JavaScript.</p>"
-    job = {"id": 123, "title": "Developer", "job_category_id": 1, "requirements_original": "$2f"}
+    job = {"id": 123, "title": "Developer", "job_category_id": 1, "requirements_original": "$2f", "experiences_str": "2 years, 4 years"}
     props = '15:' + json.dumps({"job": job}) + '\n'
     record = f"2f:T{len(requirement.encode('utf-8')):x}," + requirement
     html = ''.join('<script>self.__next_f.push(' + json.dumps([1, s]) + ')</script>' for s in [props, record[:19], record[19:]])
     post = JobPost(source="topdev", title="Developer", job_id="123")
     enrich_detail(post, html, {})
-    assert post.requirements == "Yêu cầu: Python3 và C++17, ưu tiên JavaScript."
+    assert post.requirements == "Yêu cầu: Python3 và C++17, ưu tiên JavaScript.\nKinh nghiệm (website): 2 years, 4 years"
     assert post.programming_languages == ["C++", "JavaScript", "Python"]
     assert post.language_evidence["Python"]["source"] == "Yêu cầu ứng viên"
+
+
+def test_topdev_list_reads_public_salary_and_resolves_company_path_references():
+    salary = {"currency": "VND", "unit": "MONTH", "min": 10_000_000, "max": 20_000_000,
+              "value": "10.000.000 VND to 20.000.000 VND", "min_estimate": 999_000_000}
+    job = {"id": 1, "title": "Python Dev", "job_category_id": 1, "company": "$1:list:0:company",
+           "salary": salary, "responsibilities_original": "$a", "requirements_original": "$b"}
+    text = "<p>Build Python services.</p>"
+    requirement = "<p>Minimum 3 years of experience with Python and SQL.</p>"
+    chunks = ["1:" + json.dumps({"list": [{"company": {"display_name": "Public Co"}}]}) + "\n",
+              "2:" + json.dumps({"jobs": [job]}) + "\n",
+              f"a:T{len(text.encode('utf-8')):x}," + text,
+              f"b:T{len(requirement.encode('utf-8')):x}," + requirement]
+    html = topdev_html().split("<script>")[0] + "".join('<script>self.__next_f.push(' + json.dumps([1, c]) + ')</script>' for c in chunks)
+    post, = parse_topdev(html, config_site("topdev"))
+    assert post.company == "Public Co"
+    assert (post.salary_min, post.salary_max) == (10_000_000, 20_000_000)
+    assert post.description == "Build Python services."
+    assert "3 years" in post.requirements
+
+
+def test_skip_known_jobs_keeps_paging_until_new_jobs_and_handles_last_page_404(monkeypatch):
+    from data_ana import crawl as module
+    calls = []
+    class Session:
+        headers = {}
+        def get(self, url, timeout):
+            calls.append(url)
+            response = requests.Response()
+            response.url = url
+            response.status_code = 404 if "page=2" in url else 200
+            job = "2" if "second" in url else "1"
+            response._content = f'<article data-job-id="{job}"><h3>Developer {job}</h3><a href="/{job}"></a></article>'.encode()
+            return response
+        def close(self):
+            pass
+    class Robots:
+        def can_fetch(self, *args):
+            return True
+    monkeypatch.setattr(module, "make_session", lambda retries: Session())
+    monkeypatch.setattr(module, "load_robots_parser", lambda *args: Robots())
+    selectors = {"card": "article", "title": "h3", "url": "a", "company": "", "location": "", "salary": "", "skills": ""}
+    site = dict(name="test", enabled=True, base_url="https://example.com", robots_url="unused", list_urls=["https://example.com/first", "https://example.com/second"],
+                max_pages=2, max_jobs=1, selectors=selectors, skip_known_urls=["https://example.com/1"])
+    statuses = {}
+    posts = crawl({"request": {"delay_seconds": 0}, "sites": [site]}, statuses=statuses)
+    assert [p.job_id for p in posts] == ["2"]
+    assert statuses["test"]["skipped_known"] == 1
+    assert statuses["test"]["status"] == "ok"
+    assert "https://example.com/first?page=2" in calls

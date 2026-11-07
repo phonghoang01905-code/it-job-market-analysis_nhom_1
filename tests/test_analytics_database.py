@@ -48,7 +48,7 @@ def test_postgres_dashboard_reads_new_committed_data(isolated_database, monkeypa
     from streamlit.testing.v1 import AppTest
     def listing(i):
         return normalize_job({"source":"itviec","job_id":str(i),"url":f"https://example.com/{i}","title":"Python Developer", "skills":["Python"],
-            "company":"ACME", "scraped_at":"2026-10-30T07:00:00+07:00"},Decimal("25000"))
+            "company":"ACME", "salary_text":"20 triệu", "scraped_at":"2026-10-30T07:00:00+07:00"},Decimal("25000"))
     database.load_incremental([listing(1)],"test")
     monkeypatch.setattr(data_access,"connect",isolated_database)
     monkeypatch.setattr(data_access,"database_url",lambda:"test")

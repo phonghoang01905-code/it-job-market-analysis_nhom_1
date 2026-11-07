@@ -13,6 +13,7 @@ def test_cv_demo_parse_review_rank_stale_input_and_clear(tmp_path, monkeypatch):
     ]).to_csv(path, index=False)
     monkeypatch.setattr(sys, "argv", ["dashboard", "--data", str(path)])
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=40).run()
+    next(w for w in app.multiselect if w.label == "Nhóm dữ liệu lương").set_value([]).run()
     assert not app.exception
     assert any(tab.label == "CV → Việc làm phù hợp" for tab in app.tabs)
     next(b for b in app.button if b.label == "Dùng CV minh họa").click().run()

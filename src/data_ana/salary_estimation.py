@@ -82,7 +82,7 @@ def city_key(row: dict) -> str:
 
 def features(row: dict) -> dict:
     title = str(row.get("title") or "")
-    body = str(row.get("requirements") or row.get("description") or "")
+    body = str(row.get("description") or "") + " " + str(row.get("requirements") or "")
     band, years = experience(row)
     skills = set(extract_normalized_skills(title, body, row.get("skills", "")))
     key = lambda text: re.sub(r"\W+", "", unaccent(str(text)))

@@ -13,6 +13,7 @@ def test_language_filter_and_empty_combination_keep_dashboard_working(tmp_path, 
     monkeypatch.setattr(sys, "argv", ["dashboard", "--data", str(path)])
     from pathlib import Path
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=30).run()
+    next(w for w in app.multiselect if w.label == "Nhóm dữ liệu lương").set_value([]).run()
     assert not app.exception
     app.multiselect[0].set_value(["Python"]).run()
     assert not app.exception
@@ -32,6 +33,7 @@ def test_english_and_benefit_filters_show_real_profile_fields(tmp_path, monkeypa
     monkeypatch.setattr(sys, "argv", ["dashboard", "--data", str(path)])
     from pathlib import Path
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=30).run()
+    next(w for w in app.multiselect if w.label == "Nhóm dữ liệu lương").set_value([]).run()
     assert not app.exception
     english = next(w for w in app.selectbox if w.label == "Thông tin tiếng Anh")
     english.set_value("Yêu cầu rõ ràng").run()
@@ -56,6 +58,7 @@ def test_salary_table_shows_amounts_conversion_and_clear_missing_status(tmp_path
     monkeypatch.setattr(sys, "argv", ["dashboard", "--data", str(path)])
     from pathlib import Path
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "src/data_ana/dashboard.py"), default_timeout=30).run()
+    next(w for w in app.multiselect if w.label == "Nhóm dữ liệu lương").set_value([]).run()
     assert not app.exception
     table = next(t.value for t in app.dataframe if "Mức lương" in t.value.columns).set_index("Vị trí")
     assert table.loc["DevSecOps", "Quy đổi VND/tháng"] == "62.500.000 – 75.000.000 ₫/tháng"
