@@ -1,4 +1,4 @@
-"""Expand all three sources and publish only salary-qualified listings."""
+"""Expand all three sources; retain every job and classify salary availability."""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +29,7 @@ def main(argv=None):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
     load_dotenv()
-    parser = argparse.ArgumentParser(description="Crawl mở rộng; chỉ xuất tin có lương công khai hoặc đủ căn cứ ước tính")
+    parser = argparse.ArgumentParser(description="Crawl mở rộng, giữ toàn bộ tin; phân nhóm lương A/B/C, thiếu lương giữ NaN")
     parser.add_argument("--config", type=Path, default=Path("config/sites.example.json"))
     parser.add_argument("--raw", type=Path, default=Path("data/raw/jobs.csv"))
     parser.add_argument("--archive", type=Path, default=Path("data/raw/jobs_archive.csv"))
@@ -37,7 +37,7 @@ def main(argv=None):
     parser.add_argument("--work-dir", type=Path, default=Path("outputs/salary_collection")/today())
     parser.add_argument("--sources", nargs="+")
     parser.add_argument("--max-pages", type=int)
-    parser.add_argument("--max-jobs", type=int, help="Số tin mới tối đa mỗi nguồn trước khi lọc lương")
+    parser.add_argument("--max-jobs", type=int, help="Số tin mới tối đa mỗi nguồn; vẫn giữ tin thỏa thuận/chưa có lương")
     parser.add_argument("--no-db", action="store_true")
     parser.add_argument("--skip-crawl", action="store_true", help="Chỉ phân loại lại archive và checkpoint đã lưu")
     args = parser.parse_args(argv)
@@ -51,7 +51,7 @@ def main(argv=None):
     configure_logging(Path("logs/salary_collection"))
     args.work_dir.mkdir(parents=True, exist_ok=True)
     report = dict(started_at=datetime.now(timezone.utc).isoformat(), sources={}, status="running")
-    archive = merge_posts([], args.archive if args.archive.exists() else args.raw)
+    archive = merge_posts(merge_posts([], args.raw), args.archive)
     if not (args.work_dir/"before.csv").exists():
         write_csv(archive, args.work_dir/"before.csv")
     baseline = merge_posts([], args.work_dir/"before.csv")
@@ -73,8 +73,6 @@ def main(argv=None):
             site["max_jobs"] = args.max_jobs
         site["skip_known_urls"] = [p.url for p in archive if p.source == name]
         site["skip_known_ids"] = [p.job_id for p in archive if p.source == name and p.job_id]
-        if name == "itviec":
-            site["list_urls"] = ["https://itviec.com/it-jobs?salary_ranges%5B%5D=500&salary_ranges%5B%5D=10000&salary_ranges_changed=true", *original["list_urls"]]
         statuses = {}
         try:
             posts = crawl({**config, "request": {**config.get("request", {}), "retries": 0}, "sites": [site]}, statuses=statuses)
@@ -83,7 +81,7 @@ def main(argv=None):
             statuses[name] = {"status": "error", "message": f"{type(exc).__name__}: {exc}", "collected": len(posts)}
         write_csv(posts, path)
         write_daily_json(posts, args.work_dir/f"{today()}_{name}.json", name)
-        print(f"{name}: hoàn tất lượt crawl, {len(posts)} tin mới trước khi lọc lương", flush=True)
+        print(f"{name}: hoàn tất lượt crawl, giữ {len(posts)} tin mới, kể cả tin chưa công khai lương", flush=True)
         return name, posts, statuses.get(name, {})
 
     fresh = []
@@ -99,9 +97,9 @@ def main(argv=None):
     archive = merge_posts(fresh, args.archive)
     write_csv(archive, args.archive)
     selected, assessed = qualify_posts(archive)
-    if not selected:
-        raise RuntimeError("Không có tin đủ tiêu chí lương; chưa thay đổi file dữ liệu chính")
-    write_csv(selected, args.raw)
+    if not archive:
+        raise RuntimeError("Chưa có tin tuyển dụng để xuất dữ liệu")
+    write_csv(archive, args.raw)
     # Export the audit with machine-readable values; never put estimates into
     # the observed salary_min/salary_max columns of raw data or PostgreSQL.
     audit = assessed.drop(columns=["language_evidence", "profile_evidence"], errors="ignore").copy()
@@ -114,9 +112,10 @@ def main(argv=None):
         stats = report["sources"].setdefault(name, {"status": "not_requested"})
         stats.update(archive_rows=len(rows), qualified_total=int(rows.salary_group.isin(["A", "B"]).sum()),
                      public_total=int(rows.salary_group.eq("A").sum()), estimated_total=int(rows.salary_group.eq("B").sum()),
-                     excluded_total=int(rows.salary_group.eq("C").sum()), new_candidates=int(new_mask.sum()),
+                     missing_salary_total=int(rows.salary_group.eq("C").sum()), published_total=len(rows), new_candidates=int(new_mask.sum()), new_published=int(new_mask.sum()),
                      new_qualified=int((new_mask & rows.salary_group.isin(["A", "B"])).sum()))
-    report.update(finished_at=datetime.now(timezone.utc).isoformat(), archive_rows=len(archive), qualified_rows=len(selected),
+    report.update(finished_at=datetime.now(timezone.utc).isoformat(), archive_rows=len(archive), published_rows=len(archive), qualified_rows=len(selected),
+                  missing_salary_rows=int(assessed.salary_group.eq("C").sum()), retention_policy="keep_all_jobs",
                   status="complete" if all(s.get("status") in {"ok", "checkpoint", "not_requested"} for s in report["sources"].values()) else "partial")
     status_path = args.raw.parent/"crawl_status.json"
     old_statuses = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}

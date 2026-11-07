@@ -196,12 +196,13 @@ bao gồm 4 tin đọc thêm mức tiền rõ ràng trong tiêu đề. Số B c�
 công khai tương tự chưa đủ cho phần lớn vị trí; cần crawl thêm dữ liệu để tăng
 độ phủ, không giảm điều kiện chỉ để lấp hết giá trị thiếu.
 
-### Crawl mở rộng, chỉ giữ tin quy đổi hoặc ước tính được lương
+### Crawl mở rộng, giữ toàn bộ tin và phân loại lương
 
-Đợt **07/11/2026** đã bổ sung **245 tin mới đạt tiêu chí**, đưa bộ chính lên
-**336 tin (330 công khai + 6 ước tính)**. Số tin theo nguồn: **TopCV 233, ITviec 78,
-TopDev 25**. Không có nhóm C trong bộ chính; xem [báo cáo đợt crawl](docs/crawl-2026-11-07-salary.md)
-để biết số ứng viên đã đọc, số bị loại và cách kiểm tra.
+Đợt **07/11/2026** đã thu thập thêm **607 tin**, đưa bộ chính lên **825 tin**:
+**330 công khai, 6 ước tính và 489 tin chưa đủ dữ liệu lương**. Theo website:
+**TopCV 398, ITviec 320, TopDev 107**. Tin thỏa thuận vẫn có giá trị phân tích
+vị trí, kỹ năng, công ty, địa điểm và xu hướng nên được giữ đầy đủ; xem
+[báo cáo đợt crawl](docs/crawl-2026-11-07-salary.md).
 
 ```bash
 python -m data_ana.collect_salary
@@ -210,7 +211,7 @@ python -m data_ana.collect_salary
 Lệnh này mở rộng cả ITviec, TopDev và TopCV, bỏ qua job ID/URL đã lưu và chạy
 từng nguồn song song. Mỗi website vẫn có phiên request riêng, nghỉ ít nhất
 4 giây với ITviec/TopDev và 12 giây với TopCV; dừng nguồn khi bị 403/429.
-ITviec ưu tiên bộ lọc lương công khai trên giao diện tìm kiếm. TopDev đọc số
+ITviec đọc danh sách IT tổng hợp, không yêu cầu tin phải có lương. TopDev đọc số
 tiền thực tế và yêu cầu từ HTML/Next.js công khai, không dùng `min_estimate`,
 `max_estimate`, tài khoản hoặc API riêng tư. TopCV ưu tiên tối đa 60 trang chi
 tiết để bổ sung yêu cầu/phúc lợi; các tin còn lại giữ thông tin thật có trên thẻ.
@@ -219,31 +220,34 @@ Giới hạn mặc định mỗi lượt: **250 ứng viên mới ITviec / 250 T
 tương ứng tối đa 16 / 20 / 8 trang danh sách. Đây là giới hạn trên, không phải
 cam kết website có đủ từng ấy tin. Không thêm tin trùng để đạt số lượng.
 
-Sau khi ghép với lịch sử, chương trình tính lại A/B/C trên toàn bộ mẫu và chỉ
-xuất **A/B có số tiền VND/tháng hợp lệ**. Tin có khoảng đảo ngược, lương giờ/ngày
-chưa có thời lượng quy đổi hoặc không đủ căn cứ được loại khỏi bộ chính.
-Trần/sàn công khai vẫn giữ đúng giới hạn, không tự điền đầu khoảng còn thiếu.
+Sau khi ghép với lịch sử, chương trình **xuất toàn bộ tin A/B/C**, không loại
+bản ghi vì thiếu lương. Tin C giữ `NaN` trong pandas (`NULL` trong PostgreSQL),
+không điền 0 hoặc tự gán lương. Lương giờ/ngày chưa có thời lượng quy đổi và
+khoảng không hợp lệ cũng giữ nguyên tin, để trống số tiền so sánh theo tháng.
+Trần/sàn công khai giữ đúng giới hạn, không tự điền đầu khoảng còn thiếu.
+
+**Chỉ phép tính lương mới bỏ qua giá trị thiếu.** Thống kê số tin, công ty, city,
+kỹ năng và xu hướng vẫn tính cả tin C. Khi cần phân tích riêng tin có lương,
+dùng bộ lọc A/B trên dashboard; việc lọc để xem không xóa dữ liệu.
 
 | Tệp | Nội dung |
 |---|---|
-| `data/raw/jobs.csv` | Bộ chính dùng cho dashboard, chỉ các tin đạt tiêu chí lương |
-| `data/raw/jobs_archive.csv` | Bản lưu trữ toàn bộ ứng viên/lịch sử để đối chiếu; có cả C |
-| `data/processed/jobs.csv` | Bộ chính sau ETL; không ghi mức ước tính vào lương gốc |
+| `data/raw/jobs.csv` | Bộ chính đầy đủ A/B/C, bao gồm tin thỏa thuận/chưa có lương |
+| `data/raw/jobs_archive.csv` | Bản lưu trữ đầy đủ để ghép lịch sử và khôi phục dữ liệu |
+| `data/processed/jobs.csv` | Toàn bộ tin sau ETL; lương thiếu giữ NaN, ước tính tách khỏi lương gốc |
 | `data/processed/salary_collection_audit.csv` | Phân nhóm, số tiền, lý do, danh sách mẫu đối chiếu của toàn bộ ứng viên |
-| `data/processed/salary_collection_report.json` | Số tin mới/đạt tiêu chí/loại theo website và kết quả ETL |
+| `data/processed/salary_collection_report.json` | Số tin xuất đầy đủ, có căn cứ lương, thiếu lương giữ lại và kết quả ETL |
 | `outputs/salary_collection/YYYY-MM-DD/` | Checkpoint và bản dữ liệu trước lượt chạy |
 
 Tùy chọn: `--sources itviec topdev`, `--max-pages 10`, `--max-jobs 300`, `--no-db`.
 Để phân loại lại các checkpoint đã có mà không tải lại website, dùng
 `--skip-crawl --work-dir <thư_mục_checkpoint>`.
 
-`salary_qualified_only: true` trong `config/sites.example.json` cũng áp dụng cho
-`python crawler.py` và `python -m data_ana.crawl`, nên các lượt crawl hằng ngày
-không đưa lại tin chưa có căn cứ lương vào `jobs.csv`. Các dòng C lịch sử đã có
-trong PostgreSQL được giữ để kiểm tra, không nạp mới các tin C của lượt này.
-Dashboard mặc định lọc **A/B** cho cả CSV và PostgreSQL; có thể chọn C nếu muốn
-đọc lịch sử. Tin B chỉ dùng mẫu A đã công khai; không hạ ngưỡng đối chiếu để
-tăng số lượng, không biến lương ước tính thành lương nhà tuyển dụng công bố.
+`python crawler.py`, `python -m data_ana.crawl` và lệnh crawl mở rộng đều giữ
+toàn bộ tin, kể cả khi cả lượt chỉ có tin thỏa thuận. Đã bỏ cơ chế tự loại C
+khỏi bộ chính. Dashboard mặc định chọn **A/B/C** cho cả CSV và PostgreSQL,
+có chỉ số riêng cho số tin chưa có lương. Tin B chỉ dùng mẫu A đã công khai;
+không hạ ngưỡng đối chiếu hoặc biến lương ước tính thành lương công bố.
 
 Ngày 06/11/2026 đã đọc lại HTML công khai lưu cùng bộ dữ liệu 218 tin, bổ sung
 số tiền cho **16/70 tin ITviec** và **16/50 tin TopDev**. Đây là bổ sung dữ liệu

@@ -170,11 +170,12 @@ def horizontal_bar_chart(
 
 
 def show_metrics(df: pd.DataFrame) -> None:
-    total, companies, disclosed, estimated = st.columns(4)
+    total, companies, disclosed, estimated, missing = st.columns(5)
     total.metric("Tin tuyển dụng", f"{len(df):,}")
     companies.metric("Nhà tuyển dụng", f"{df.loc[df['company'].ne(''), 'company'].nunique():,}")
     disclosed.metric("A · Lương công khai", f"{df['salary_group'].eq('A').sum():,}")
     estimated.metric("B · Có thể ước tính", f"{df['salary_group'].eq('B').sum():,}")
+    missing.metric("C · Chưa có lương", f"{df['salary_group'].eq('C').sum():,}")
 
 
 def show_jobs(df: pd.DataFrame, key: str) -> None:
@@ -376,8 +377,8 @@ def main(argv=None) -> None:
         selected_benefits = st.multiselect("Phúc lợi mong muốn", sorted({s for items in all_df["_benefit_list"] for s in items}))
         benefits_only = st.checkbox("Chỉ tin đã có nội dung phúc lợi")
         st.caption("Trong mỗi nhóm lọc, tin khớp ít nhất một lựa chọn; giữa các nhóm, tin phải khớp đồng thời.")
-        salary_groups = st.multiselect("Nhóm dữ liệu lương", list(GROUP_LABELS), default=["A", "B"], format_func=GROUP_LABELS.get, key="market_salary_groups")
-        st.caption("Mặc định chọn A/B để so sánh lương. Có thể chọn thêm C để xem dữ liệu lịch sử chưa đủ căn cứ.")
+        salary_groups = st.multiselect("Nhóm dữ liệu lương", list(GROUP_LABELS), default=list(GROUP_LABELS), format_func=GROUP_LABELS.get, key="market_salary_groups_all_jobs")
+        st.caption("Mặc định giữ cả A/B/C. Tin chưa có lương vẫn được tính trong thống kê thị trường; các ô lương thiếu giữ NaN.")
         disclosed_only = st.checkbox("Chỉ tin có khoảng lương công khai đầy đủ")
         st.divider()
         st.caption("Lương ước tính luôn có nhãn B và dấu ≈. Nhóm C giữ NaN, không dùng tính thống kê. Các nguồn có thể được thu thập vào các ngày khác nhau.")

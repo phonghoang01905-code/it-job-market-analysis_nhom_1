@@ -105,6 +105,15 @@ def test_observed_ceiling_is_not_filled_with_an_estimated_floor():
     assert pd.isna(target.salary_estimate_min)
 
 
+def test_hourly_job_stays_in_dataset_with_nan_even_when_monthly_peers_exist():
+    rows = sample()
+    rows[-1]["salary_text"] = "20 USD/hour"
+    result = estimate(rows)
+    assert len(result) == 4
+    target = result.iloc[-1]
+    assert target.salary_group == "C" and pd.isna(target.salary_comparison_midpoint)
+
+
 def test_empty_dataset_has_estimate_schema():
     result = estimate([])
     assert result.empty

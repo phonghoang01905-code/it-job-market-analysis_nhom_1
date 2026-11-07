@@ -11,7 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from data_ana.alerts import send_alert
-from data_ana.crawl import crawl, load_config, merge_posts, today, write_csv, write_daily_json
+from data_ana.crawl import crawl, load_config, today, write_daily_json
 from data_ana.etl import run_etl, write_json
 from data_ana.locking import single_instance
 from data_ana.logging_config import configure_logging
@@ -65,12 +65,9 @@ def run_pipeline(args) -> int:
             old_statuses.update(statuses)
             write_json(status_path, old_statuses)
             if posts:
-                if config.get("salary_qualified_only"):
-                    from data_ana.salary_selection import update_salary_dataset
-                    _, qualified = update_salary_dataset(posts, args.raw)
-                    report["salary_selection"] = {"archive_rows": len(qualified), "qualified_rows": int(qualified.salary_group.isin(["A", "B"]).sum()), "excluded_rows": int(qualified.salary_group.eq("C").sum())}
-                else:
-                    write_csv(merge_posts(posts, args.raw), args.raw)
+                from data_ana.salary_selection import update_salary_dataset
+                _, classified = update_salary_dataset(posts, args.raw)
+                report["salary_classification"] = {"published_rows": len(classified), "salary_comparable_rows": int(classified.salary_group.isin(["A", "B"]).sum()), "missing_salary_rows_kept": int(classified.salary_group.eq("C").sum())}
                 logger.info("Đã lưu %s tin mới/thu thập lại", len(posts))
             elif not args.raw.exists():
                 raise RuntimeError("Không crawl được tin và chưa có dữ liệu cũ để xử lý")

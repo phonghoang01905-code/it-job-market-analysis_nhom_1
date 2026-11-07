@@ -1,4 +1,4 @@
-"""Publish salary-qualified jobs while retaining the full collection archive."""
+"""Classify salary availability while preserving every collected job."""
 from dataclasses import asdict
 from decimal import Decimal, InvalidOperation
 
@@ -32,10 +32,8 @@ def update_salary_dataset(posts, main_path):
     from data_ana.crawl import merge_posts, write_csv
 
     archive_path = main_path.with_name(main_path.stem + "_archive" + main_path.suffix)
-    archive = merge_posts(posts, archive_path if archive_path.exists() else main_path)
+    archive = merge_posts(merge_posts(posts, main_path), archive_path)
     write_csv(archive, archive_path)
-    selected, assessed = qualify_posts(archive)
-    if not selected:
-        raise ValueError("Chưa có tin đủ tiêu chí lương; giữ dữ liệu chính hiện có, lưu ứng viên trong archive")
-    write_csv(selected, main_path)
-    return selected, assessed
+    _, assessed = qualify_posts(archive)
+    write_csv(archive, main_path)
+    return archive, assessed

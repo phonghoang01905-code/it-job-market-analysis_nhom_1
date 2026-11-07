@@ -6,7 +6,7 @@ from data_ana.collect_salary import qualify_posts
 from data_ana.models import JobPost
 
 
-def test_only_convertible_public_and_supported_estimated_jobs_are_published():
+def test_salary_comparison_subset_does_not_modify_original_job_values():
     stamp = datetime.now(timezone.utc).isoformat()
     posts = [JobPost(source="topcv", title="Backend Developer Python", company=f"Company {i}", location="Hà Nội", level="Middle",
         skills=["Python", "SQL"], requirements="Minimum 3 years of experience. Python SQL.", url=f"https://example.com/{i}",
@@ -27,18 +27,22 @@ def test_empty_collection_does_not_invent_jobs():
     assert not selected and audit.empty
 
 
-def test_daily_publish_archives_missing_salary_instead_of_putting_it_back_in_main_file(tmp_path):
-    from data_ana.crawl import merge_posts
+def test_daily_publish_keeps_unpriced_jobs_in_main_and_archive(tmp_path):
+    from data_ana.crawl import merge_posts, write_csv
     from data_ana.salary_selection import update_salary_dataset
     path = tmp_path/"jobs.csv"
     known = JobPost(source="topcv", title="Developer", url="https://example.com/1", salary_text="20 - 30 triệu", salary_min=20_000_000, salary_max=30_000_000)
     unknown = JobPost(source="itviec", title="Developer", url="https://example.com/2")
     selected, _ = update_salary_dataset([known, unknown], path)
-    assert len(selected) == 1
-    assert len(merge_posts([], path)) == 1
+    assert len(selected) == 2
+    assert len(merge_posts([], path)) == 2
     assert len(merge_posts([], tmp_path/"jobs_archive.csv")) == 2
+    # Recover an unpriced row from the archive even if an older main file omitted it.
+    write_csv([known], path)
+    update_salary_dataset([], path)
+    assert len(merge_posts([], path)) == 2
     update_salary_dataset([unknown], path)
-    assert len(merge_posts([], path)) == 1
+    assert len(merge_posts([], path)) == 2
     assert len(merge_posts([], tmp_path/"jobs_archive.csv")) == 2
 
 
@@ -70,10 +74,27 @@ def test_checkpoint_publication_keeps_audit_and_counts_only_qualified_new_jobs(t
     result = main(["--sources", "topcv", "--raw", str(raw), "--archive", str(raw.with_name("jobs_archive.csv")),
                    "--work-dir", str(work), "--out-dir", str(tmp_path/"clean"), "--skip-crawl", "--no-db"])
     assert result == 0
-    assert len(merge_posts([], raw)) == 2
+    assert len(merge_posts([], raw)) == 3
     assert len(merge_posts([], raw.with_name("jobs_archive.csv"))) == 3
     report = json.loads((tmp_path/"clean/salary_collection_report.json").read_text(encoding="utf-8"))
     assert report["sources"]["topcv"]["new_qualified"] == 1
-    assert report["sources"]["topcv"]["excluded_total"] == 1
-    assert report["etl"]["clean_rows"] == 2
+    assert report["sources"]["topcv"]["missing_salary_total"] == 1
+    assert report["published_rows"] == 3 and report["qualified_rows"] == 2
+    assert report["etl"]["clean_rows"] == 3
     assert report["status"] == "complete"
+
+
+def test_collection_with_only_negotiable_jobs_still_publishes_data(tmp_path):
+    from data_ana.collect_salary import main
+    from data_ana.crawl import write_csv, merge_posts
+    work = tmp_path/"work"
+    work.mkdir()
+    post = JobPost(source="itviec", title="Python Developer", company="Example", location="Hà Nội", skills=["Python"],
+                   salary_text="Negotiable", url="https://example.com/negotiable")
+    write_csv([post], work/"itviec_candidates.csv")
+    raw = tmp_path/"raw/jobs.csv"
+    result = main(["--sources", "itviec", "--raw", str(raw), "--archive", str(raw.with_name("jobs_archive.csv")),
+                   "--work-dir", str(work), "--out-dir", str(tmp_path/"clean"), "--skip-crawl", "--no-db"])
+    assert result == 0 and len(merge_posts([], raw)) == 1
+    clean = pd.read_csv(tmp_path/"clean/jobs.csv")
+    assert len(clean) == 1 and clean.salary_min.isna().all() and clean.salary_max.isna().all()

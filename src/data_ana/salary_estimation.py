@@ -165,7 +165,16 @@ def add_salary_estimates(frame: pd.DataFrame, *, as_of=None) -> pd.DataFrame:
                       salary_role=f["role"], salary_experience_band=f["band"], salary_estimate_reason="",
                       salary_observed_min=low, salary_observed_max=high, salary_observed_evidence=evidence)
         observed = pd.notna(low) or pd.notna(high)
-        if observed:
+        period = str(row.get("salary_period") or "").lower()
+        try:
+            period = normalize_salary(str(row.get("salary_text") or ""), Decimal("25000"))["salary_period"] or period
+        except InvalidOperation:
+            period = "invalid"
+        invalid_range = pd.notna(low) and pd.notna(high) and low > high
+        if period in {"hour", "day", "invalid"} or invalid_range:
+            observed = False
+            result["salary_estimate_reason"] = "Khoảng lương không hợp lệ hoặc thiếu thời lượng quy đổi sang tháng; giữ NaN."
+        elif observed:
             result.update(salary_group="A", salary_estimate_reason="Mức lương từ tin gốc; giữ nguyên số tiền và giới hạn trần/sàn.")
         else:
             missing = [label for key, label in (("role", "nhóm vị trí"), ("city", "địa điểm cụ thể"), ("band", "kinh nghiệm/cấp bậc"), ("skills", "kỹ năng chuyên môn")) if not f[key]]

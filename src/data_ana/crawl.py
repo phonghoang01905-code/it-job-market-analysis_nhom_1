@@ -461,12 +461,8 @@ def main() -> None:
     status_path.write_text(json.dumps(old_statuses, ensure_ascii=False, indent=2), encoding="utf-8")
     if not posts:
         raise RuntimeError("No job posts were collected; no output files were written.")
-    if config.get("salary_qualified_only"):
-        from data_ana.salary_selection import update_salary_dataset
-        combined, _ = update_salary_dataset(posts, args.out)
-    else:
-        combined = merge_posts(posts, args.out)
-        write_csv(combined, args.out)
+    from data_ana.salary_selection import update_salary_dataset
+    combined, _ = update_salary_dataset(posts, args.out)
     print(f"Saved {len(posts)} new/refreshed jobs; {len(combined)} total rows in {args.out}")
     sources = sorted({post.source for post in posts})
     source = sources[0] if len(sources) == 1 else "multiple"

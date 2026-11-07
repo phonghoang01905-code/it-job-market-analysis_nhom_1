@@ -1,24 +1,26 @@
-# Mở rộng dữ liệu có lương — 07/11/2026
+# Mở rộng dữ liệu và giữ tin thỏa thuận — 07/11/2026
 
 Đã thu thập thêm **607 ứng viên mới** từ ba website, đối chiếu với 218 tin lịch sử.
-Sau phân loại, **245 tin mới đạt tiêu chí lương** được đưa vào bộ chính. Bộ chính
-có **336 tin: 330 công khai (A), 6 ước tính (B), không có nhóm C**. Số tin có thể
-dùng đối chiếu lương tăng từ 91 lên 336; đây là mẫu đã chọn theo độ đầy đủ lương,
-không phải mẫu ngẫu nhiên đại diện thị trường.
+**Toàn bộ 825 tin được giữ trong bộ chính**, gồm **330 công khai (A), 6 ước tính
+(B), 489 tin chưa đủ dữ liệu lương (C)**. Ban đầu 336 tin A/B được tách riêng;
+theo yêu cầu giữ đầy đủ dữ liệu, các tin C đã được khôi phục vào CSV, PostgreSQL
+và dashboard. Tin thiếu lương vẫn được dùng phân tích nhu cầu tuyển dụng/kỹ năng;
+chỉ bị bỏ qua trong các phép tính số lương, không bị xóa bản ghi.
 
-| Website | Trang danh sách chính | Ứng viên mới | Tin mới đạt tiêu chí | A trong bộ chính | B trong bộ chính | Tổng bộ chính |
-|---|---:|---:|---:|---:|---:|---:|
-| ITviec | 16 | 250 | 62 | 76 | 2 | 78 |
-| TopDev | 7 | 57 | 8 | 24 | 1 | 25 |
-| TopCV | 8 | 300 | 175 | 230 | 3 | 233 |
-| **Tổng** | **31** | **607** | **245** | **330** | **6** | **336** |
+| Website | Tin mới | A · Công khai | B · Ước tính | C · Thiếu lương | Tổng giữ lại |
+|---|---:|---:|---:|---:|---:|
+| ITviec | 250 | 76 | 2 | 242 | 320 |
+| TopDev | 57 | 24 | 1 | 82 | 107 |
+| TopCV | 300 | 230 | 3 | 165 | 398 |
+| **Tổng** | **607** | **330** | **6** | **489** | **825** |
 
 ## Thu thập và lựa chọn
 
-- ITviec: ưu tiên slider lương của trang tìm kiếm, đọc trang chi tiết và
+- ITviec: đợt thu thập này có ưu tiên slider lương của trang tìm kiếm, đọc trang chi tiết và
   `JobPosting.baseSalary` công khai. 250 ứng viên mới đều có mô tả/yêu cầu.
   Đã sửa phân trang để giữ hai giá trị trùng tên `salary_ranges[]`; kết quả từ
   lượt thử trước được ghép lại theo job ID/URL, không tạo bản sao.
+  Các lượt mới dùng danh sách IT tổng hợp và vẫn giữ tin chưa công khai lương.
 - TopDev: duyệt hết các trang có thêm thẻ IT riêng biệt trong bộ lọc danh mục
   hiện dùng. Website trả về ít tin hơn giới hạn tối đa 250 nên không cố điền đủ
   số. Adapter giải mã tham chiếu JSON theo đường dẫn cho công ty và các bản ghi
@@ -33,24 +35,24 @@ không phải mẫu ngẫu nhiên đại diện thị trường.
   cho TopCV. Kiểm tra robots.txt; không đăng nhập, không gọi API riêng tư,
   không vượt qua chặn truy cập. Lưu checkpoint trong lúc chạy.
 
-Chỉ xuất tin A/B có ít nhất một đầu lương VND/tháng hợp lệ. Lương giờ/ngày chưa
-có thời lượng quy đổi và khoảng đảo ngược bị loại. Không tự bổ sung sàn cho tin
-chỉ có trần hoặc ngược lại. Mẫu cho nhóm B phải đủ hai đầu công khai, cùng nhóm
+Xuất đầy đủ A/B/C. Lương giờ/ngày chưa có thời lượng quy đổi và khoảng đảo ngược
+được để NaN ở cột số tiền so sánh, vẫn giữ dữ liệu tin. Không tự bổ sung sàn cho
+tin chỉ có trần hoặc ngược lại. Mẫu cho nhóm B phải đủ hai đầu công khai, cùng nhóm
 vị trí/thành phố/kinh nghiệm, đủ tương đồng kỹ năng, ít nhất 3 tin / 2 công ty.
 Không dùng các kết quả B làm mẫu và không giảm ngưỡng để tăng số lượng.
 
 ## Dữ liệu và kiểm tra
 
-- `data/raw/jobs.csv`: 336 tin A/B dùng cho dashboard.
-- `data/raw/jobs_archive.csv`: 825 ứng viên/lịch sử; gồm 489 tin C không đưa vào bộ chính.
-- `data/processed/jobs.csv`: 336 dòng sau ETL, 0 trùng, 0 bị từ chối.
+- `data/raw/jobs.csv`: 825 tin A/B/C dùng cho dashboard.
+- `data/raw/jobs_archive.csv`: bản lưu trữ đầy đủ 825 tin để đối chiếu/khôi phục.
+- `data/processed/jobs.csv`: 825 dòng sau ETL, 0 trùng, 0 bị từ chối.
 - `data/processed/salary_collection_audit.csv`: cột số, lý do và nguồn đối chiếu.
 - `data/processed/salary_collection_report.json`: thống kê chi tiết và kết quả ETL.
-- PostgreSQL thêm 245 tin, nhận diện 91 tin đã có. Database có 463 tin do giữ
-  nguyên 127 dòng C lịch sử; dashboard mặc định A/B hiển thị đúng 336 tin.
+- PostgreSQL hiện có đủ 825 tin. Bước khôi phục bổ sung 362 tin C chưa được nạp
+  trước đó; 489 tin C đều giữ NULL ở trường số lương. Dashboard mặc định hiển thị A/B/C.
 
-Đã xác nhận CSV raw, processed và PostgreSQL cho cùng phân nhóm A/B của bộ chính;
-không trùng URL/job ID trong từng website, mọi tin bộ chính có số tiền so sánh.
+Đã xác nhận CSV raw, processed và PostgreSQL cùng 825 tin, cùng phân nhóm A/B/C;
+không trùng URL/job ID trong từng website. Các tin C giữ NaN, không điền 0.
 Các giá trị ước tính tách khỏi `salary_min/max/text` gốc; giao diện và CSV xuất
 ghi rõ nhóm, dấu `≈`, số mẫu, lý do và link từng tin đối chiếu.
 
@@ -61,6 +63,6 @@ python -m data_ana.collect_salary
 python -m streamlit run src/data_ana/dashboard.py -- --data data/processed/jobs.csv
 ```
 
-Lệnh crawl thông thường và scheduler cũng áp dụng `salary_qualified_only=true`
-trong cấu hình mặc định. Các tệp archive/audit/checkpoint là đầu ra cục bộ;
+Lệnh crawl thông thường và scheduler giữ tin chưa có lương trong bộ chính;
+lọc để phân tích lương không làm mất dữ liệu thị trường. Archive/audit/checkpoint là đầu ra cục bộ;
 CSV bộ chính được commit lên GitHub để Streamlit Cloud đọc được dữ liệu mới.
