@@ -8,6 +8,7 @@ import streamlit as st
 from data_ana.analytics import prepare_jobs, summary, explode
 from data_ana.salary import monthly_salary_label
 from data_ana.salary_estimation import GROUP_LABELS, add_salary_estimates
+from data_ana.utils import LEVEL_KEYWORDS
 
 COLORS = {"A": "#18b99a", "B": "#f0ad4e", "C": "#94a3b8"}
 
@@ -65,6 +66,21 @@ def show_salary_analysis(frame: pd.DataFrame) -> None:
     median = df.salary_midpoint.median()
     a.metric("Trung vị midpoint · " + ("A+B" if mode.startswith("Công khai +") else "A"), f"{median/1e6:.1f} triệu/tháng" if pd.notna(median) else "NaN")
     b.metric("Tin đủ khoảng lương để so sánh", f"{df.salary_midpoint.count()} / {len(df)}")
+    st.subheader("Lương trung bình theo cấp bậc IT")
+    levels = summary(df, "level").set_index("level")
+    order = list(LEVEL_KEYWORDS)
+    levels = levels.reindex(order + [level for level in levels.index if level not in order])
+    levels.index = levels.index.to_series().replace("Unknown", "Chưa xác định")
+    level_table = pd.DataFrame({
+        "Tổng tin": levels.job_count.fillna(0).astype(int),
+        "Tin dùng tính lương": levels.salary_count.fillna(0).astype(int),
+        "Lương trung bình": levels.avg_salary / 1e6,
+        "Lương trung vị": levels.median_salary / 1e6,
+    }).rename_axis("Cấp bậc").reset_index()
+    st.caption("Đơn vị: triệu đồng/tháng. Mỗi tin có đủ hai đầu khoảng lương đóng góp một giá trị bằng (lương thấp + lương cao) / 2. Cột trung bình là trung bình cộng các giá trị đó trong từng cấp bậc. Ô trống nghĩa là chưa có mẫu đủ dữ liệu.")
+    st.dataframe(level_table, hide_index=True, use_container_width=True, column_config={
+        name: st.column_config.NumberColumn(format="%.1f") for name in ["Lương trung bình", "Lương trung vị"]
+    })
     dimension = st.selectbox("Phân nhóm lương", ["skill", "level", "city"], format_func=lambda v: {"skill": "Kỹ năng", "level": "Cấp bậc", "city": "Thành phố"}[v], key="eda_salary_dimension")
     minimum = st.number_input("Số tin có lương tối thiểu trong nhóm", 1, 100, 1, key="eda_salary_minimum")
     data = explode(df, dimension)
