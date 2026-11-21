@@ -154,7 +154,7 @@ gốc còn là lời nhắc đăng nhập. Các cụm lương rõ ràng trong ti
 |---|---|---|
 | **A · Công khai** | Tin có mức lương cụ thể, kể cả chỉ có trần/sàn | Giữ số tiền và chuẩn hóa về VND/tháng |
 | **B · Ước tính** | Tin thiếu lương nhưng đủ thông tin và có nhóm so sánh đáng tin cậy | `Ước tính ≈ … ₫/tháng`, kèm danh sách tin đối chiếu |
-| **C · Thiếu dữ liệu** | Thiếu thông tin, ít tin tương tự hoặc nhóm lương quá phân tán | Các cột số giữ `NaN`; giao diện ghi `NaN · Chưa đủ dữ liệu` |
+| **C · Thiếu dữ liệu** | Thiếu thông tin, ít tin tương tự hoặc nhóm lương quá phân tán | Các cột số giữ `NaN`; giao diện ghi `NULL` |
 
 Mô-đun [salary_estimation.py](src/data_ana/salary_estimation.py) đối chiếu trên
 **toàn bộ dữ liệu trước khi lọc dashboard**. Do đó, chọn một website hoặc từ khóa

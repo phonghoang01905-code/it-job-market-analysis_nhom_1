@@ -23,7 +23,7 @@ def qualify_posts(posts):
     assessed.loc[newly_invalid, "salary_estimate_reason"] = "Khoảng lương không hợp lệ hoặc chưa quy đổi được sang VND/tháng."
     assessed.loc[invalid, "salary_group"] = "C"
     assessed.loc[invalid, "salary_group_label"] = GROUP_LABELS["C"]
-    assessed.loc[invalid, ["salary_display", "salary_vnd"]] = "NaN · Chưa đủ dữ liệu"
+    assessed.loc[invalid, ["salary_display", "salary_vnd"]] = "NULL"
     assessed.loc[invalid, ["salary_comparison_min", "salary_comparison_max", "salary_comparison_midpoint", "salary_estimate_min", "salary_estimate_max", "salary_estimate_midpoint"]] = float("nan")
     return [post for post, accepted in zip(posts, assessed.salary_group.isin(["A", "B"])) if accepted], assessed
 

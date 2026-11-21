@@ -17,7 +17,7 @@ def show_salary_detail(row) -> None:
     st.markdown("**Mức lương & căn cứ đối chiếu**")
     group = row.get("salary_group", "C")
     st.markdown(f'<span style="display:inline-block;color:{COLORS[group]};border:1px solid {COLORS[group]};border-radius:20px;padding:4px 12px;font-size:13px">{GROUP_LABELS[group]}</span>', unsafe_allow_html=True)
-    st.markdown(f"### {row.get('salary_display', 'NaN · Chưa đủ dữ liệu')}")
+    st.markdown(f"### {row.get('salary_display', 'NULL')}")
     st.caption(row.get("salary_estimate_reason", ""))
     if group == "A":
         st.write("VND/tháng: " + row.get("salary_vnd", ""))
@@ -48,7 +48,7 @@ def show_salary_analysis(frame: pd.DataFrame) -> None:
         frame = add_salary_estimates(frame)
     st.write("So sánh lương với nguồn dữ liệu rõ ràng")
     cards = st.columns(3)
-    subtitles = {"A": "Giữ mức lương nhà tuyển dụng công khai.", "B": "≈ Từ ít nhất 3 tin tương tự / 2 công ty.", "C": "NaN · Không tự gán khi thiếu căn cứ."}
+    subtitles = {"A": "Giữ mức lương nhà tuyển dụng công khai.", "B": "≈ Từ ít nhất 3 tin tương tự / 2 công ty.", "C": "NULL · Không tự gán khi thiếu căn cứ."}
     for card, group in zip(cards, GROUP_LABELS):
         with card, st.container(border=True):
             st.markdown(f'<span style="color:{COLORS[group]};font-weight:600">{GROUP_LABELS[group]}</span>', unsafe_allow_html=True)
@@ -64,7 +64,7 @@ def show_salary_analysis(frame: pd.DataFrame) -> None:
     st.caption("Các trường lương gốc được giữ nguyên. Ước tính B dùng lại mẫu công khai A, nên A+B không phải số quan sát lương độc lập. Nhóm C và tin chỉ có trần/sàn không dùng tính midpoint.")
     a, b = st.columns(2)
     median = df.salary_midpoint.median()
-    a.metric("Trung vị midpoint · " + ("A+B" if mode.startswith("Công khai +") else "A"), f"{median/1e6:.1f} triệu/tháng" if pd.notna(median) else "NaN")
+    a.metric("Trung vị midpoint · " + ("A+B" if mode.startswith("Công khai +") else "A"), f"{median/1e6:.1f} triệu/tháng" if pd.notna(median) else "NULL")
     b.metric("Tin đủ khoảng lương để so sánh", f"{df.salary_midpoint.count()} / {len(df)}")
     st.subheader("Lương trung bình theo cấp bậc IT")
     levels = summary(df, "level").set_index("level")
@@ -119,7 +119,7 @@ def show_salary_analysis(frame: pd.DataFrame) -> None:
     if selected is not None:
         with st.container(border=True):
             show_salary_detail(frame.loc[selected])
-    with st.expander("Phương pháp ước tính & điều kiện giữ NaN"):
+    with st.expander("Phương pháp ước tính & điều kiện giữ NULL"):
         st.write("Đối chiếu trong toàn bộ dữ liệu trước khi lọc dashboard: cùng nhóm vị trí, cùng thành phố cụ thể, cùng nhóm kinh nghiệm; chênh lệch tối đa 2 năm nếu cả hai tin nêu số năm. Kỹ năng giao nhau theo Jaccard tối thiểu 0,2.")
         st.write("Chọn tối đa 7 tin gần nhất theo kỹ năng (80%) và từ trong tiêu đề (20%). Cần ít nhất 3 tin / 2 công ty, tối đa 2 tin mỗi công ty; gộp tin trùng cùng công ty/tiêu đề/địa điểm/cấp bậc. Chỉ dùng khoảng lương công khai đầy đủ, thu thập trong 180 ngày; không lấy tin đã ước tính làm mẫu.")
-        st.write("Ước tính bằng trung vị từng đầu khoảng lương. Giữ NaN nếu thiếu thông tin, ít tin so sánh hoặc lương nhóm quá phân tán (IQR midpoint/trung vị > 0,6 hoặc midpoint cao nhất/thấp nhất > 3). Khoảng này mô tả nhóm đối chiếu, không phải khoảng tin cậy hay cam kết của nhà tuyển dụng.")
+        st.write("Ước tính bằng trung vị từng đầu khoảng lương. Giữ NULL nếu thiếu thông tin, ít tin so sánh hoặc lương nhóm quá phân tán (IQR midpoint/trung vị > 0,6 hoặc midpoint cao nhất/thấp nhất > 3). Khoảng này mô tả nhóm đối chiếu, không phải khoảng tin cậy hay cam kết của nhà tuyển dụng.")

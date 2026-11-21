@@ -173,7 +173,7 @@ def add_salary_estimates(frame: pd.DataFrame, *, as_of=None) -> pd.DataFrame:
         invalid_range = pd.notna(low) and pd.notna(high) and low > high
         if period in {"hour", "day", "invalid"} or invalid_range:
             observed = False
-            result["salary_estimate_reason"] = "Khoảng lương không hợp lệ hoặc thiếu thời lượng quy đổi sang tháng; giữ NaN."
+            result["salary_estimate_reason"] = "Khoảng lương không hợp lệ hoặc thiếu thời lượng quy đổi sang tháng; giữ NULL."
         elif observed:
             result.update(salary_group="A", salary_estimate_reason="Mức lương từ tin gốc; giữ nguyên số tiền và giới hạn trần/sàn.")
         else:
@@ -234,7 +234,7 @@ def add_salary_estimates(frame: pd.DataFrame, *, as_of=None) -> pd.DataFrame:
             result["salary_display"] = "Ước tính ≈ " + monthly_salary_label(comparison_low, comparison_high)
             result["salary_vnd"] = result["salary_display"]
         else:
-            result["salary_display"] = result["salary_vnd"] = "NaN · Chưa đủ dữ liệu"
+            result["salary_display"] = result["salary_vnd"] = "NULL"
         result["salary_group_label"] = GROUP_LABELS[result["salary_group"]]
         outputs.append(result)
     for field in (outputs[0] if outputs else ["salary_group", "salary_group_label", "salary_display", "salary_vnd", "salary_peer_count", "salary_peers", "salary_role", "salary_experience_band", "salary_estimate_reason", "salary_estimate_min", "salary_estimate_max", "salary_estimate_midpoint", "salary_comparison_min", "salary_comparison_max", "salary_comparison_midpoint", "salary_observed_min", "salary_observed_max", "salary_observed_evidence"]):

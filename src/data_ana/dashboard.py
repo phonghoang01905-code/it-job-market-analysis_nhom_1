@@ -183,7 +183,7 @@ def show_jobs(df: pd.DataFrame, key: str) -> None:
     if df.empty:
         st.info("Không có tin phù hợp với bộ lọc đang chọn.")
         return
-    st.caption("A · Lương công khai  |  B · Ước tính từ tin tương tự, có dấu ≈  |  C · NaN khi chưa đủ dữ liệu. Mở chi tiết một tin để xem căn cứ và các công việc đối chiếu.")
+    st.caption("A · Lương công khai  |  B · Ước tính từ tin tương tự, có dấu ≈  |  C · NULL khi chưa đủ dữ liệu. Mở chi tiết một tin để xem căn cứ và các công việc đối chiếu.")
     columns = ["website", "title", "company", "location", "salary_group_label", "salary_display", "salary_vnd", "salary_comparison_min", "salary_comparison_max", "salary_comparison_midpoint", "salary_peer_count", "salary_estimate_min", "salary_estimate_max", "salary_estimate_reason", "salary_observed_evidence", "salary_role", "salary_experience_band", "salary_peers", "salary_text", "programming_languages", "supplementary_skills", "foreign_languages", "english_requirement", "english_status", "benefits", "benefit_tags", "requirements", "work_model", "skills", "posted_date", "scraped_at", "url"]
     table = df[columns].copy()
     table["salary_peers"] = table["salary_peers"].map(lambda peers: json.dumps(peers, ensure_ascii=False))
@@ -378,10 +378,10 @@ def main(argv=None) -> None:
         benefits_only = st.checkbox("Chỉ tin đã có nội dung phúc lợi")
         st.caption("Trong mỗi nhóm lọc, tin khớp ít nhất một lựa chọn; giữa các nhóm, tin phải khớp đồng thời.")
         salary_groups = st.multiselect("Nhóm dữ liệu lương", list(GROUP_LABELS), default=list(GROUP_LABELS), format_func=GROUP_LABELS.get, key="market_salary_groups_all_jobs")
-        st.caption("Mặc định giữ cả A/B/C. Tin chưa có lương vẫn được tính trong thống kê thị trường; các ô lương thiếu giữ NaN.")
+        st.caption("Mặc định giữ cả A/B/C. Tin chưa có lương vẫn được tính trong thống kê thị trường; các ô lương thiếu giữ NULL.")
         disclosed_only = st.checkbox("Chỉ tin có khoảng lương công khai đầy đủ")
         st.divider()
-        st.caption("Lương ước tính luôn có nhãn B và dấu ≈. Nhóm C giữ NaN, không dùng tính thống kê. Các nguồn có thể được thu thập vào các ngày khác nhau.")
+        st.caption("Lương ước tính luôn có nhãn B và dấu ≈. Nhóm C giữ NULL, không dùng tính thống kê. Các nguồn có thể được thu thập vào các ngày khác nhau.")
     filters = dict(keyword=keyword, websites=websites, city=city, model=model, selected_languages=selected_languages,
         selected_supplementary=selected_supplementary, selected_foreign=selected_foreign, selected_benefits=selected_benefits,
         english_filter=english_filter, benefits_only=benefits_only, disclosed_only=disclosed_only, salary_groups=salary_groups)
